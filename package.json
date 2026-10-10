@@ -1,0 +1,17 @@
+{
+  "name": "grindlab",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GrindLab : budget, revenus, épargne et garde-robe (app Android via Capacitor).",
+  "scripts": {
+    "build:web": "node scripts/copy-web.js",
+    "test": "node tests/logic.test.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  }
+}

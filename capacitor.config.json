@@ -1,0 +1,9 @@
+{
+  "appId": "com.grindlab.app",
+  "appName": "GrindLab",
+  "webDir": "www",
+  "backgroundColor": "#0f1a1f",
+  "server": {
+    "androidScheme": "https"
+  }
+}
