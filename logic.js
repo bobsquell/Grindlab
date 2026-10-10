@@ -48,7 +48,7 @@
   }
 
   const DEFAULT_PROFILE = {
-    name: "", income: 1700, rent: 675, otherFixed: 0, essentials: 350,
+    name: "", status: "", gender: "x", setup: false, income: 1700, rent: 675, otherFixed: 0, essentials: 350,
     savingsRate: 0.10, style: "smartcasual", clothingPct: 0.04, median: MEDIAN,
   };
 
@@ -142,11 +142,26 @@
     ["Sneakers statement", "chaussures", "streetwear", 1, 60, 110, 220, 100, 2],
     ["Casquette ou bonnet", "accessoire", "streetwear", 0, 12, 25, 50, 60, 3],
     ["Doudoune légère", "veste", "streetwear", 0, 45, 100, 250, 60, 3],
+    ["Chemisier ou blouse unie", "haut", "business", 1, 25, 50, 110, 80, 2.5, "f"],
+    ["Jupe droite ou pantalon cigarette", "bas", "business", 1, 30, 65, 150, 70, 3, "f"],
+    ["Tailleur (veste et jupe ou pantalon)", "costume", "business", 0, 90, 200, 500, 40, 4, "f"],
+    ["Escarpins ou ballerines en cuir", "chaussures", "business", 1, 40, 90, 220, 100, 3, "f"],
+    ["Robe chemise ou portefeuille", "haut", "smartcasual", 1, 30, 65, 150, 60, 3, "f"],
+    ["Jupe midi", "bas", "smartcasual", 1, 25, 55, 120, 60, 3, "f"],
+    ["Bottines en cuir", "chaussures", "smartcasual", 0, 50, 110, 250, 90, 4, "f"],
+    ["Legging ou jogging confortable", "bas", "streetwear", 1, 15, 35, 80, 100, 2, "f"],
+    ["Jupe en jean ou cargo", "bas", "streetwear", 0, 25, 50, 110, 60, 3, "f"],
   ].map((r) => ({
+    g: r[9] || (r[0] === "Costume bleu marine" || r[0] === "Cravate unie" ? "m" : "all"),
     item: r[0], category: r[1], style: r[2], essential: r[3],
     price_low: r[4], price_mid: r[5], price_high: r[6], wears: r[7], life: r[8],
   }));
 
+  // Pièces adaptées au genre choisi ("x" : uniquement les pièces mixtes) ; option seconde main
+  function catalogFor(gender, secondHand) {
+    const base = CATALOG.filter((c) => c.g === "all" || c.g === gender);
+    return secondHand ? secondHandCatalog(base) : base;
+  }
   function costPerWear(it, tier) {
     const w = it.wears * it.life * TIER_LIFESPAN[tier];
     return w > 0 ? it["price_" + tier] / w : Infinity;
@@ -292,8 +307,8 @@
   }
   function defaultAccounts() {
     return [
-      { id: "pea", name: "PEA Trade Republic", type: "pea", balance: 0, contributed: 0, rate: 0, openDate: "", history: [] },
-      { id: "livret", name: "Livret A Boursorama", type: "livret", balance: 0, contributed: 0, rate: 1.5, openDate: "", history: [] },
+      { id: "pea", name: "PEA", type: "pea", balance: 0, contributed: 0, rate: 0, openDate: "", history: [] },
+      { id: "livret", name: "Livret A", type: "livret", balance: 0, contributed: 0, rate: 1.5, openDate: "", history: [] },
     ];
   }
   function newAccount(type) {
@@ -405,15 +420,23 @@
   }
 
   /* ---- Emploi : liens de recherche et employeurs cibles ---- */
-  const JOB_TYPES = { alternance: "Alternance", cdi: "CDI junior", stage: "Stage" };
+  const JOB_TYPES = { alternance: "Alternance", cdi: "Emploi (CDI, CDD)", stage: "Stage" };
+  const STATUSES = { alternant: "Alternant", etudiant: "Étudiant", salarie: "Salarié", independant: "Indépendant", recherche: "En recherche d'emploi", retraite: "Retraité" };
+  // Valeurs par défaut selon la situation : type d'offre cherchée et pyramide affichée
+  const STATUS_DEFAULTS = {
+    alternant: { jobType: "alternance", pyr: "stu" }, etudiant: { jobType: "stage", pyr: "stu" },
+    salarie: { jobType: "cdi", pyr: "nat" }, independant: { jobType: "cdi", pyr: "nat" }, recherche: { jobType: "cdi", pyr: "nat" },
+    retraite: { jobType: "cdi", pyr: "nat" },
+  };
+  const GENDERS = { m: "Homme", f: "Femme", x: "Autre ou je préfère ne pas préciser" };
   const CITIES = { paris: "Paris", versailles: "Versailles", lille: "Lille", luxembourg: "Luxembourg", zurich: "Zurich", remote: "Télétravail" };
   const REGION_OF_CITY = { paris: "paris", versailles: "paris", remote: "paris", lille: "lille", luxembourg: "lu", zurich: "ch" };
   function jobQuery(q, type) {
-    const w = type === "alternance" ? "alternance" : type === "stage" ? "stage" : "junior";
+    const w = type === "alternance" ? "alternance" : type === "stage" ? "stage" : "";
     return ((q || "") + " " + w).trim();
   }
-  function jobLinks(city, q, type) {
-    const e = encodeURIComponent, qq = jobQuery(q, type), loc = CITIES[city] || "";
+  function jobLinks(city, q, type, custom) {
+    const e = encodeURIComponent, qq = jobQuery(q, type), loc = city === "custom" ? (custom || "") : (CITIES[city] || "");
     const links = [["LinkedIn", "https://www.linkedin.com/jobs/search/?keywords=" + e(qq) + "&location=" + e(city === "remote" ? "France" : loc)]];
     if (city === "luxembourg") {
       links.push(["Indeed Luxembourg", "https://lu.indeed.com/jobs?q=" + e(qq) + "&l=Luxembourg"]);
@@ -486,7 +509,7 @@
   const DEFAULT_LOOK = { shape: null, L: "", F: "", C: "", J: "", hairType: "wavy", length: "any", density: "normal" };
 
   const round10 = (x) => Math.round(x / 10) * 10;
-  function bmr(b) { return 10 * b.weight + 6.25 * b.height - 5 * b.age + (b.sex === "f" ? -161 : 5); }
+  function bmr(b) { return 10 * b.weight + 6.25 * b.height - 5 * b.age + (b.sex === "f" ? -161 : b.sex === "x" ? -78 : 5); }
   function tdee(b) { return bmr(b) * (ACTIVITY[b.activity] || ACTIVITY.moderate)[0]; }
   function bmi(b) { const m = b.height / 100; return m > 0 ? b.weight / (m * m) : NaN; }
   function bmiLabel(x) {
@@ -494,7 +517,7 @@
     return x < 18.5 ? "Maigreur" : x < 25 ? "Corpulence normale" : x < 30 ? "Surpoids" : "Obésité";
   }
   function calorieTarget(b) {
-    const t = tdee(b), floor = b.sex === "f" ? 1200 : 1500;
+    const t = tdee(b), floor = b.sex === "f" ? 1200 : b.sex === "x" ? 1350 : 1500;
     let delta = 0, note = "";
     if (b.goal === "lose") {
       if (bmi(b) < 20) note = "Ton IMC est déjà bas : un déficit n'est pas recommandé. Cible calée sur le maintien.";
@@ -578,6 +601,8 @@
     ["skyr", "Skyr ou fromage blanc 0 %", "dairy", 55, 10, 4, 0.2, 0, 3.2, null, ""],
     ["yaourt", "Yaourt nature", "dairy", 55, 4, 5, 2, 0, 2.5, null, ""],
     ["lait", "Lait demi-écrémé", "dairy", 46, 3.2, 4.8, 1.6, 0, 1, null, ""],
+    ["lait-soja", "Boisson soja nature", "dairy", 40, 3.3, 1, 1.8, 0.5, 1.3, null, ""],
+    ["yaourt-soja", "Yaourt au soja nature", "dairy", 50, 4, 2.5, 2.3, 0.5, 3, null, ""],
     ["emmental", "Emmental", "dairy", 380, 28, 0.5, 29, 0, 11, null, ""],
     ["huile-olive", "Huile d'olive", "fat", 900, 0, 0, 100, 0, 8, null, ""],
     ["amandes", "Amandes", "fat", 600, 21, 7, 52, 11, 12, null, ""],
@@ -623,7 +648,7 @@
   }
 
   function suggestedBasket(b, month, targetKcal, protTarget) {
-    const veg = b.diet === "vege";
+    const veg = b.diet === "vege" || b.diet === "vegan", vegan = b.diet === "vegan";
     const pick = (order, n) => order.filter((id) => inSeason(FOOD_BY_ID[id], month)).slice(0, n);
     const fruits = pick(["pomme", "poire", "orange", "clementine", "kiwi", "raisin", "fraise"], 2);
     const vegs = pick(["carotte", "courgette", "tomate", "brocoli", "chou-fleur", "poireau", "courge", "epinards", "haricots-verts", "champignons", "salade"], 4);
@@ -637,12 +662,13 @@
     const fixed = Object.assign({}, d);
     const flex = {
       "pates-completes": 60, "riz-complet": 50, flocons: 40, "pain-complet": 80, "pommes-de-terre": 150,
-      lentilles: 30, "pois-chiches": 50, skyr: 125, yaourt: 125, lait: 100, emmental: 15,
+      lentilles: 30, "pois-chiches": 50,
       "huile-olive": 15, amandes: 15, "beurre-cacahuete": 10, "chocolat-noir": 10,
     };
-    const protG = veg ? { oeufs: 70, tofu: 60, lentilles: 30 } : { oeufs: 60, poulet: 100, saumon: 30, thon: 15, boeuf: 20 };
+    if (vegan) { flex["yaourt-soja"] = 125; flex["lait-soja"] = 200; } else { Object.assign(flex, { skyr: 125, yaourt: 125, lait: 100, emmental: 15 }); }
+    const protG = vegan ? { tofu: 100, lentilles: 40, "pois-chiches": 40 } : veg ? { oeufs: 70, tofu: 60, lentilles: 30 } : { oeufs: 60, poulet: 100, saumon: 30, thon: 15, boeuf: 20 };
     Object.keys(protG).forEach((k) => { flex[k] = (flex[k] || 0) + protG[k]; });
-    const protIds = veg ? ["oeufs", "tofu", "skyr", "lentilles"] : ["oeufs", "poulet", "thon", "skyr"];
+    const protIds = vegan ? ["tofu", "lentilles", "yaourt-soja", "pois-chiches"] : veg ? ["oeufs", "tofu", "skyr", "lentilles"] : ["oeufs", "poulet", "thon", "skyr"];
     const kcalOf = (m) => Object.keys(m).reduce((s, k) => s + (FOOD_BY_ID[k].kcal * m[k]) / 100, 0);
     const protOf = (m) => Object.keys(m).reduce((s, k) => s + (FOOD_BY_ID[k].p * m[k]) / 100, 0);
     let cur = Object.assign({}, flex);
@@ -673,7 +699,7 @@
     if (Math.abs(diff) > 0.1 * target.kcal)
       out.push({ tone: "warn", text: "Ton panier fait " + nf(d.kcal) + " kcal par jour pour une cible de " + nf(target.kcal) + " (" + (diff > 0 ? "+" : "−") + nf(Math.abs(diff)) + ")." });
     if (d.p < 0.9 * macros.protein)
-      out.push({ tone: "warn", text: "Il manque environ " + Math.round(macros.protein - d.p) + " g de protéines par jour : œufs, skyr, légumineuses, " + (b.diet === "vege" ? "tofu" : "volaille ou thon") + "." });
+      out.push({ tone: "warn", text: "Il manque environ " + Math.round(macros.protein - d.p) + " g de protéines par jour : œufs, skyr, légumineuses, " + (b.diet !== "omni" ? "tofu" : "volaille ou thon") + "." });
     if (d.fv < 400)
       out.push({ tone: "warn", text: "Fruits et légumes : " + Math.round(d.fv) + " g par jour, la repère est d'au moins 5 portions (environ 400 g)." });
     if (d.fib < 25)
@@ -682,7 +708,8 @@
       out.push({ tone: "warn", text: "Les produits ultra-transformés pèsent " + Math.round(totals.processedShare * 100) + " % de tes calories : réduis sodas, chips, biscuits, plats préparés." });
     if (w.red > 500) out.push({ tone: "warn", text: "Viande rouge : " + Math.round(w.red) + " g par semaine, les repères officiels conseillent de rester sous 500 g." });
     if (w.charc > 150) out.push({ tone: "warn", text: "Charcuterie : " + Math.round(w.charc) + " g par semaine, les repères conseillent moins de 150 g." });
-    if (b.diet !== "vege" && w.fish < 200) out.push({ tone: "info", text: "Poisson : vise 2 portions par semaine dont une de poisson gras (saumon, maquereau, sardines)." });
+    if (b.diet === "omni" && w.fish < 200) out.push({ tone: "info", text: "Poisson : vise 2 portions par semaine dont une de poisson gras (saumon, maquereau, sardines)." });
+    if (b.diet === "vegan") out.unshift({ tone: "info", text: "Régime vegan : une supplémentation en vitamine B12 est nécessaire, parles-en à un médecin ou un pharmacien." });
     if (!out.length) out.push({ tone: "ok", text: "Ton panier colle à ta cible : calories, protéines, fibres et fruits-légumes." });
     return out.slice(0, 5);
   }
@@ -772,7 +799,7 @@
       goal: "Ajouter du volume en haut pour équilibrer la mâchoire.", avoid: "Des côtés très larges ou une coupe plate sur le dessus.", beard: "Barbe courte, pas trop fournie sur la mâchoire." },
   };
   const HAIR_TYPES = { straight: "Raides", wavy: "Ondulés", curly: "Bouclés ou crépus" };
-  const HAIR_LENGTHS = { any: "Peu importe", short: "Court", medium: "Mi-long" };
+  const HAIR_LENGTHS = { any: "Peu importe", short: "Court", medium: "Mi-long", long: "Long" };
   const HAIR_DENSITY = { fine: "Fins ou clairsemés", normal: "Normaux", thick: "Épais" };
 
   function faceShape(m) {
@@ -810,12 +837,39 @@
     { name: "Frange latérale ou rideau", length: "medium", types: ["straight", "wavy"], shapes: ["oval", "long", "coeur", "diamant"],
       how: "Frange qui tombe sur le côté du front, côtés nets, nuque dégradée." },
   ];
+  const CUTS_F = [
+    { name: "Pixie texturée", length: "short", types: ["straight", "wavy", "curly"], shapes: ["oval", "coeur", "diamant", "long"], who: "femme",
+      how: "Dessus de 4 à 6 cm texturé, nuque et tempes courtes, frange effilée." },
+    { name: "Carré court (bob) au menton", length: "short", types: ["straight", "wavy"], shapes: ["oval", "long", "coeur", "diamant", "triangle"], who: "femme",
+      how: "Coupe nette au niveau du menton, légèrement dégradée dans la nuque." },
+    { name: "Carré plongeant", length: "medium", types: ["straight", "wavy"], shapes: ["rond", "carre", "oval", "triangle"], who: "femme",
+      how: "Plus long devant que derrière, pointes effilées pour allonger le visage." },
+    { name: "Lob (carré long) aux épaules", length: "medium", types: ["straight", "wavy", "curly"], shapes: ["oval", "rond", "carre", "long", "coeur", "diamant", "triangle"], who: "femme",
+      how: "Longueur aux clavicules, quelques mèches étagées pour le mouvement." },
+    { name: "Coupe étagée (shag)", length: "medium", types: ["straight", "wavy", "curly"], shapes: ["oval", "long", "carre", "coeur", "diamant"], who: "femme",
+      how: "Étages courts sur le dessus, longueurs conservées, frange rideau possible." },
+    { name: "Cheveux longs dégradés", length: "long", types: ["straight", "wavy", "curly"], shapes: ["oval", "rond", "carre", "long", "coeur", "diamant", "triangle"], who: "femme",
+      how: "Longueur conservée, dégradé léger pour alléger les pointes et donner du mouvement." },
+    { name: "Frange rideau et longueurs", length: "long", types: ["straight", "wavy"], shapes: ["rond", "carre", "long", "coeur", "diamant", "oval"], who: "femme",
+      how: "Frange ouverte au milieu qui retombe de chaque côté, longueurs au-dessous des épaules." },
+    { name: "Frange droite", length: "medium", types: ["straight", "wavy"], shapes: ["oval", "long", "diamant", "coeur"], who: "femme",
+      how: "Frange pleine à hauteur des sourcils, longueurs au choix." },
+    { name: "Coupe courte bouclée", length: "short", types: ["curly"], shapes: ["oval", "rond", "carre", "coeur", "diamant", "triangle", "long"], who: "femme",
+      how: "Coupe sur cheveux secs, forme arrondie, volume maîtrisé sur les côtés." },
+    { name: "Queue de cheval ou chignon haut", length: "long", types: ["straight", "wavy", "curly"], shapes: ["rond", "carre", "oval", "triangle"], who: "femme",
+      how: "Coiffure plutôt que coupe : attaches hautes pour allonger le visage, quelques mèches libres devant." },
+  ];
   function cutLinks(cut) {
-    const q = encodeURIComponent("coupe homme " + cut.name);
+    const q = encodeURIComponent("coupe " + (cut.who || "homme") + " " + cut.name);
     return { images: "https://www.google.com/search?tbm=isch&q=" + q, pinterest: "https://www.pinterest.com/search/pins/?q=" + q };
   }
-  function recommendCuts(shape, hairType, length, density) {
-    let list = CUTS.filter((c) => c.shapes.indexOf(shape) >= 0 && c.types.indexOf(hairType) >= 0);
+  function recommendCuts(shape, hairType, length, density, gender) {
+    const ok = (c) => c.shapes.indexOf(shape) >= 0 && c.types.indexOf(hairType) >= 0;
+    const m = CUTS.filter(ok), f = CUTS_F.filter(ok);
+    let list;
+    if (gender === "f") list = f;
+    else if (gender === "x") { list = []; for (let i = 0; i < Math.max(m.length, f.length); i++) { if (m[i]) list.push(m[i]); if (f[i]) list.push(f[i]); } }
+    else list = m;
     if (length && length !== "any") {
       const pref = list.filter((c) => c.length === length);
       if (pref.length) list = pref;
@@ -1059,7 +1113,7 @@
   return {
     LIVRET_CAP, PEA_CAP, todayISO, defaultAccounts, newAccount, addSnapshot, totalWorth, netWorthSeries,
     peaStats, livretStats, importAccountCSV, brandsFor, JOB_TYPES, CITIES, REGION_OF_CITY, REGION_LABELS,
-    EMPLOYERS, jobLinks, jobQuery, employerLink, insights,
+    EMPLOYERS, jobLinks, jobQuery, employerLink, insights, STATUSES, STATUS_DEFAULTS, GENDERS, catalogFor, CUTS_F,
     ACTIVITY, BODY_GOALS, DEFAULT_BODY, DEFAULT_LOOK, bmr, tdee, bmi, bmiLabel, calorieTarget, macroTargets, weeksToTarget, addWeight, weightTrend,
     FOODS, FOOD_BY_ID, FOOD_CATS, isFV, inSeason, seasonalProduce, basketTotals, suggestedBasket, basketAdvice, SWAPS, STORES, storeLink, produceLink,
     applyAnnualInterest, applyAllInterest, RETAILERS, foodSearchLinks, vintedLink, shoppingLink, pieceQuery, clothingLinks, SECOND_HAND_FACTOR, secondHandCatalog,

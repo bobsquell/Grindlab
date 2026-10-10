@@ -21,7 +21,7 @@
       invest: { monthly: null, initial: 0, years: 10, low: 2, mid: 5, high: 8, fees: 0.3, infl: 2, target: 10000 },
       wardrobeBudget: null,
       accounts: GL.defaultAccounts(),
-      jobs: { type: "alternance", query: "chef de projet IT", cities: ["paris"], targetNet: 2500 },
+      jobs: { type: "cdi", query: "", cities: ["paris"], custom: "", showEmployers: false, targetNet: 2500 },
       body: Object.assign({}, GL.DEFAULT_BODY, { weights: [], rhythm: JSON.parse(JSON.stringify(GL.DEFAULT_RHYTHM)) }),
       prices: { date: "", city: "", data: {} },
       secondHand: false,
@@ -33,7 +33,7 @@
     const d = defaultState();
     if (!raw || typeof raw !== "object") return d;
     return {
-      profile: Object.assign(d.profile, raw.profile),
+      profile: Object.assign(d.profile, raw.profile, { setup: raw.profile ? raw.profile.setup !== false : false }),
       scenarios: Array.isArray(raw.scenarios) ? raw.scenarios : d.scenarios,
       invest: Object.assign(d.invest, raw.invest),
       wardrobeBudget: typeof raw.wardrobeBudget === "number" ? raw.wardrobeBudget : null,
@@ -112,6 +112,17 @@
     "Très aisés": ["plus de 2 fois la moyenne", "alternant très bien payé, ou salaire plus forte aide familiale"],
   };
 
+  function applyStatus(st) {
+    const d = GL.STATUS_DEFAULTS[st];
+    state.profile.status = st;
+    if (d) { state.jobs.type = d.jobType; state.ui.pyr = d.pyr; state.ui.sel = null; }
+    save();
+  }
+  function statusCard() {
+    if (state.profile.status || !state.profile.setup) return "";
+    return '<div class="card"><h2>Ta situation</h2><p class="muted">Pour adapter l\'appli (pyramide, offres d\'emploi, planning sportif), dis-nous ce qui te correspond. Tu pourras le changer dans Moi.</p><div class="chips wrap">' +
+      Object.entries(GL.STATUSES).map(([k, v]) => '<button class="chip" data-status="' + k + '">' + esc(v) + "</button>").join("") + "</div></div>";
+  }
   function interestCard() {
     return state.ui.interestNote ? '<div class="card"><h2>Intérêts crédités</h2><p>' + esc(state.ui.interestNote) + '</p><p class="muted">Estimation ajoutée automatiquement au 31 décembre (taux et solde connus). Corrige le solde si ta banque indique un autre montant.</p><button class="btn alt" data-dismiss-int>OK</button></div>' : "";
   }
@@ -126,14 +137,56 @@
     const worth = GL.totalWorth(state.accounts), target = state.invest.target || 0;
     rows.push(["Finances", worth > 0 && target > 0 ? eur(worth) + " suivis sur " + eur(target) + " visés (" + Math.min(100, Math.round((worth / target) * 100)) + " %)." : "Renseigne tes comptes pour suivre ton objectif.", "accounts"]);
     const bud = state.wardrobeBudget == null ? Math.round(GL.budget(p).clothingYear) : state.wardrobeBudget;
-    const plan = GL.planWardrobe(GL.CATALOG, p.style, bud);
+    const plan = GL.planWardrobe(GL.catalogFor(p.gender, state.secondHand), p.style, bud);
     rows.push(["Style", plan.rows.length + " pièces prévues pour " + eur(plan.spent) + " sur " + eur(bud) + " de budget.", "style"]);
     return '<div class="card"><h2>Tes objectifs</h2><ul class="list">' + rows.map((r) =>
       '<li><span class="n">' + esc(r[0]) + "<small>" + esc(r[1]) + '</small></span><a class="lk" href="#" data-go="' + r[2] + '">Voir ›</a></li>').join("") + "</ul></div>";
   }
   const kgf = (x) => x.toFixed(1).replace(".", ",") + " kg";
 
+  function viewWelcome() {
+    const p = state.profile, b = state.body;
+    const f = (id, label, type, val, extra) => '<label class="field"><span>' + label + '</span><input id="' + id + '" type="' + type + '"' + (type === "number" ? ' inputmode="decimal" step="any"' : "") + ' value="' + esc(val) + '"' + (extra || "") + "></label>";
+    view.innerHTML = '<div class="card"><h2>Bienvenue</h2><p>Réponds à quelques questions pour adapter GrindLab à ta situation. Tout reste sur ton téléphone et tu pourras tout modifier ensuite.</p></div>' +
+      '<div class="card"><h2>Toi</h2>' + f("w_name", "Prénom (facultatif)", "text", "") +
+      '<label class="field"><span>Situation</span><select id="w_status">' + optList(GL.STATUSES, "") + "</select></label>" +
+      '<label class="field"><span>Genre (pour les vêtements, coupes et le calcul des calories)</span><select id="w_gender">' + optList(GL.GENDERS, "x") + "</select></label>" +
+      '<div class="grid3">' + f("w_age", "Âge", "number", "") + f("w_height", "Taille (cm)", "number", "") + f("w_weight", "Poids (kg)", "number", "") + "</div>" +
+      f("w_city", "Ville", "text", "") + "</div>" +
+      '<div class="card"><h2>Argent</h2>' + f("w_income", "Revenu mensuel net, aides comprises (€)", "number", "") + f("w_rent", "Loyer et charges du logement (€)", "number", "") + "</div>" +
+      '<div class="card"><h2>Alimentation et forme</h2><label class="field"><span>Alimentation</span><select id="w_diet">' + optList({ omni: "Omnivore", vege: "Végétarien", vegan: "Vegan" }, "omni") + "</select></label>" +
+      '<label class="field"><span>Objectif physique</span><select id="w_goal">' + optList(GL.BODY_GOALS, "maintain") + "</select></label></div>" +
+      '<p class="err" id="werr"></p><button class="btn" id="wgo">Commencer</button>' +
+      '<p class="muted">GrindLab est un simulateur : estimations et repères généraux, ni conseil financier, ni avis médical. Aucune donnée n\'est envoyée.</p>';
+    void p; void b;
+    $("#wgo").addEventListener("click", () => {
+      const v = (id) => $("#" + id).value, n = (id) => num(v(id));
+      const err = (m) => { $("#werr").textContent = m; };
+      if (!v("w_status")) return err("Choisis ta situation.");
+      const age = n("w_age"), h = n("w_height"), w = n("w_weight");
+      if (!(age >= 14 && age <= 100)) return err("Indique ton âge (entre 14 et 100).");
+      if (!(h >= 120 && h <= 230)) return err("Indique ta taille en cm (entre 120 et 230).");
+      if (!(w >= 30 && w <= 250)) return err("Indique ton poids en kg (entre 30 et 250).");
+      if (v("w_income") === "" || n("w_income") < 0) return err("Indique ton revenu mensuel net (0 si aucun).");
+      if (v("w_rent") === "" || n("w_rent") < 0) return err("Indique ton loyer (0 si aucun).");
+      const st = state.profile, bd = state.body;
+      st.name = v("w_name").trim(); st.income = Math.round(n("w_income")); st.rent = Math.round(n("w_rent")); st.otherFixed = 0;
+      st.gender = v("w_gender");
+      bd.sex = st.gender; bd.age = Math.round(age); bd.height = h; bd.weight = w; bd.targetWeight = w; bd.weights = [];
+      bd.diet = v("w_diet"); bd.goal = v("w_goal"); bd.basket = null;
+      const city = v("w_city").trim();
+      bd.city = city;
+      const key = city.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (GL.CITIES[key]) { state.jobs.cities = [key]; state.jobs.custom = ""; }
+      else if (city) { state.jobs.cities = ["custom"]; state.jobs.custom = city; }
+      st.setup = true;
+      applyStatus(v("w_status"));
+      go("home");
+    });
+  }
+
   function viewHome() {
+    if (!state.profile.setup) return viewWelcome();
     const p = state.profile, b = GL.budget(p);
     const worth = GL.totalWorth(state.accounts);
     const ins = GL.insights(p, state.accounts);
@@ -144,12 +197,13 @@
       '<div><span class="lbl">Marge</span><b>' + eur(b.freeAfterSavings) + "</b></div></div></section>" +
       (ins.length ? '<div class="card"><h2>À regarder</h2><ul class="list">' + ins.map((i) =>
         '<li class="t-' + i.tone + '"><span class="n">' + esc(i.text) + "</span></li>").join("") + "</ul></div>" : "") +
-      interestCard() + goalsCard() +
+      statusCard() + interestCard() + goalsCard() +
       (worth > 0 ? '<div class="card"><h2>Patrimoine suivi</h2><div class="big2">' + eur(worth) + '</div><p class="muted">' + state.accounts.filter((a) => a.balance > 0).map((a) => esc(a.name) + " : " + eur(a.balance)).join(" · ") + "</p></div>" : "") +
       segHtml([["nat", "France"], ["stu", "Étudiants"]], state.ui.pyr, "data-pyr") +
       '<div class="card"><div id="pyr"></div></div><div class="card" id="pyrinfo"></div>' +
       '<div class="card"><h2>Fonds de secours cible</h2><div class="big2">' + eur(b.emergency) +
       '</div><p class="muted">3 mois de loyer, charges et dépenses courantes.</p></div>';
+    view.querySelectorAll("button[data-status]").forEach((b) => b.addEventListener("click", () => { applyStatus(b.dataset.status); viewHome(); }));
     view.querySelectorAll("[data-go]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); go(a.dataset.go); }));
     view.querySelector(".seg").addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-pyr]");
@@ -252,7 +306,7 @@
   function viewAccountList() {
     host.innerHTML = interestCard() + '<div id="accHero"></div><div id="accList">' + state.accounts.map(accCard).join("") + "</div>" +
       '<div class="grid3"><button class="btn alt" data-add="pea">+ PEA</button><button class="btn alt" data-add="livret">+ Livret</button><button class="btn alt" data-add="other">+ Autre</button></div>' +
-      '<div class="card"><h2>Pourquoi pas de connexion directe ?</h2><p class="muted">Trade Republic et Boursorama n\'offrent pas d\'accès public pour une app perso, et saisir tes identifiants bancaires dans une app non officielle est risqué. GrindLab ne te les demande jamais : tu saisis tes soldes ou tu importes l\'export CSV de ton espace client. Sur Boursorama, exporte les opérations du compte en CSV ; sur Trade Republic, exporte tes transactions si l\'option est disponible. Si ton fichier n\'est pas reconnu, saisis le solde à la main.</p>' +
+      '<div class="card"><h2>Pourquoi pas de connexion directe ?</h2><p class="muted">Les banques et courtiers en ligne (Boursorama, Trade Republic, etc.) n\'offrent pas d\'accès public pour une app perso, et saisir tes identifiants bancaires dans une app non officielle est risqué. GrindLab ne te les demande jamais : tu saisis tes soldes ou tu importes l\'export CSV de ton espace client. Exporte les opérations de ton compte en CSV depuis ton espace client, si ta banque le propose. Si ton fichier n\'est pas reconnu, saisis le solde à la main.</p>' +
       '<p class="muted">Suivi et informations générales uniquement : GrindLab ne recommande aucun placement. Pour choisir des investissements, vois un professionnel agréé.</p></div>';
     const list = $("#accList");
     function onEdit(e) {
@@ -405,7 +459,9 @@
       '<div class="card"><h2>Ta recherche</h2>' + segHtml(Object.entries(GL.JOB_TYPES), j.type, "data-jt") +
       '<label class="field"><span>Métier ou mots-clés</span><input type="text" id="jq" value="' + esc(j.query) + '"></label>' +
       '<div class="chips wrap" id="jcities">' + Object.entries(GL.CITIES).map(([k, v]) =>
-        '<button class="chip" data-city="' + k + '" aria-pressed="' + (j.cities.indexOf(k) >= 0) + '">' + esc(v) + "</button>").join("") + "</div></div>" +
+        '<button class="chip" data-city="' + k + '" aria-pressed="' + (j.cities.indexOf(k) >= 0) + '">' + esc(v) + "</button>").join("") + "</div>" +
+      '<label class="field"><span>Autre ville</span><input type="text" id="jcustom" value="' + esc(j.custom || "") + '" placeholder="ex. Lyon, Nantes, Bruxelles"></label>' +
+      '<button class="btn alt" id="jemp">' + (j.showEmployers ? "Masquer" : "Voir") + " des exemples d'employeurs (banque, fintech, IT)</button></div>" +
       '<div id="jobout"></div>' +
       '<div class="card"><h2>Si tu décroches…</h2><label class="field"><span>Salaire net visé (€/mois)</span><input type="number" inputmode="decimal" id="jsal" value="' + j.targetNet + '"></label><div id="salout"></div></div>';
     host.querySelector(".seg").addEventListener("click", (e) => {
@@ -423,20 +479,27 @@
       if (idx >= 0) j.cities.splice(idx, 1); else j.cities.push(k);
       b.setAttribute("aria-pressed", idx < 0); save(); updateJobOut();
     });
+    $("#jcustom").addEventListener("input", (e) => {
+      j.custom = e.target.value.trim();
+      const i = j.cities.indexOf("custom");
+      if (j.custom && i < 0) j.cities.push("custom"); else if (!j.custom && i >= 0) j.cities.splice(i, 1);
+      save(); updateJobOut();
+    });
+    $("#jemp").addEventListener("click", (e) => { j.showEmployers = !j.showEmployers; e.target.textContent = (j.showEmployers ? "Masquer" : "Voir") + " des exemples d'employeurs (banque, fintech, IT)"; save(); updateJobOut(); });
     $("#jsal").addEventListener("input", (e) => { j.targetNet = num(e.target.value); save(); updateSalOut(); });
     updateJobOut(); updateSalOut();
   }
   function updateJobOut() {
     const j = state.jobs, out = $("#jobout");
     if (!j.cities.length) { out.innerHTML = '<div class="card"><p class="muted">Choisis au moins un lieu.</p></div>'; return; }
-    let html = "";
+    let html = j.query.trim() ? "" : '<p class="warn">Saisis un métier ou des mots-clés ci-dessus (ex. comptable, développeur, infirmier) pour des recherches pertinentes.</p>';
     j.cities.forEach((c) => {
-      html += '<div class="card"><h2>' + esc(GL.CITIES[c]) + '</h2><div class="linkgrid">' + GL.jobLinks(c, j.query, j.type).map((l) =>
+      html += '<div class="card"><h2>' + esc(c === "custom" ? j.custom : GL.CITIES[c]) + '</h2><div class="linkgrid">' + GL.jobLinks(c, j.query, j.type, j.custom).map((l) =>
         '<a class="btn alt" href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">' + esc(l.name) + "</a>").join("") + "</div></div>";
     });
     const regions = [];
-    j.cities.forEach((c) => { const r = GL.REGION_OF_CITY[c]; if (regions.indexOf(r) < 0) regions.push(r); });
-    regions.forEach((r) => {
+    j.cities.forEach((c) => { const r = GL.REGION_OF_CITY[c]; if (r && regions.indexOf(r) < 0) regions.push(r); });
+    (j.showEmployers ? regions : []).forEach((r) => {
       html += '<div class="card"><h2>Employeurs à viser : ' + esc(GL.REGION_LABELS[r]) + '</h2><ul class="list">' +
         GL.EMPLOYERS.filter((e) => e.region === r).map((e) =>
           '<li><span class="n">' + esc(e.name) + "<small>" + esc(e.sector) + '</small></span><a class="lk" href="' + esc(GL.employerLink(e.name, GL.jobQuery(j.query, j.type))) +
@@ -536,7 +599,7 @@
   function updateStyleOut() {
     const p = state.profile, b = GL.budget(p);
     const budget = state.wardrobeBudget == null ? Math.round(b.clothingYear) : state.wardrobeBudget;
-    const plan = GL.planWardrobe(state.secondHand ? GL.secondHandCatalog(GL.CATALOG) : GL.CATALOG, p.style, budget);
+    const plan = GL.planWardrobe(GL.catalogFor(p.gender, state.secondHand), p.style, budget);
     const pct = budget > 0 ? Math.min(100, (plan.spent / budget) * 100) : 0;
     let html = '<div class="card"><h2>Dépensé</h2><div class="big2">' + eur(plan.spent) + ' <span class="muted">sur ' + eur(budget) + '</span></div><div class="bar"><i style="width:' + pct.toFixed(0) + '%"></i></div></div>';
     if (plan.rows.length) {
@@ -591,12 +654,12 @@
     const b = state.body;
     const nf2 = (label, k, step) => '<label class="field"><span>' + label + '</span><input type="number" inputmode="decimal" step="' + step + '" data-b="' + k + '" value="' + b[k] + '"></label>';
     host.innerHTML = '<div id="bodyout"></div>' +
-      '<div class="card"><h2>Ton profil</h2>' + segHtml([["m", "Homme"], ["f", "Femme"]], b.sex, "data-bsex") +
+      '<div class="card"><h2>Ton profil</h2>' + segHtml([["m", "Homme"], ["f", "Femme"], ["x", "Autre"]], b.sex, "data-bsex") +
       '<div class="grid3">' + nf2("Âge", "age", 1) + nf2("Taille (cm)", "height", 1) + nf2("Poids (kg)", "weight", 0.1) + "</div>" +
       '<label class="field"><span>Activité</span><select data-bsel="activity">' + optList(GL.ACTIVITY, b.activity) + "</select></label>" +
       '<label class="field"><span>Objectif</span><select data-bsel="goal">' + optList(GL.BODY_GOALS, b.goal) + "</select></label>" +
       '<div class="grid2">' + nf2("Poids visé (kg)", "targetWeight", 0.5) + nf2("Séances par semaine", "sessions", 1) + "</div>" +
-      segHtml([["omni", "Omnivore"], ["vege", "Végétarien"]], b.diet, "data-bdiet") + "</div>" +
+      segHtml([["omni", "Omnivore"], ["vege", "Végétarien"], ["vegan", "Vegan"]], b.diet, "data-bdiet") + "</div>" +
       '<div class="card"><h2>Pesée</h2><div class="grid2"><label class="field"><span>Poids du jour (kg)</span><input type="number" inputmode="decimal" step="0.1" id="wnew" value="' + b.weight + '"></label>' +
       '<button class="btn" id="wadd" style="align-self:end">Enregistrer</button></div><div id="wlog"></div></div>' +
       '<p class="muted">Estimations générales (formule de Mifflin-St Jeor, repères de santé publique). Ce n\'est pas un avis médical : en cas de pathologie, de grossesse ou de doute, vois un médecin ou un diététicien. Tes données restent sur cet appareil.</p>';
@@ -608,7 +671,7 @@
       upd();
     }));
     host.querySelectorAll("select[data-bsel]").forEach((s) => s.addEventListener("change", () => { b[s.dataset.bsel] = s.value; upd(); }));
-    host.querySelectorAll("[data-bsex]").forEach((btn) => btn.addEventListener("click", () => { b.sex = btn.dataset.bsex; save(); viewBodyGoal(); }));
+    host.querySelectorAll("[data-bsex]").forEach((btn) => btn.addEventListener("click", () => { b.sex = btn.dataset.bsex; state.profile.gender = b.sex; save(); viewBodyGoal(); }));
     host.querySelectorAll("[data-bdiet]").forEach((btn) => btn.addEventListener("click", () => { b.diet = btn.dataset.bdiet; b.basket = null; save(); viewBodyGoal(); }));
     $("#wadd").addEventListener("click", () => {
       const kg = num($("#wnew").value);
@@ -794,9 +857,9 @@
     const b = state.body, r = b.rhythm, wi = state.ui.sportWeek === 1 ? 1 : 0, av = r.weeks[wi];
     const goalFor = { goal: b.goal };
     host.innerHTML = '<p class="muted">Indique le temps réel dont tu disposes chaque jour pour t\'entraîner. Le programme s\'adapte : séances espacées, durée qui tient dans ton créneau, matériel disponible.</p>' +
-      segHtml([["0", "Semaine A (entreprise)"], ["1", "Semaine B (école)"]], String(wi), "data-wk") +
+      segHtml([["0", "Semaine 1"], ["1", "Semaine 2 (facultative)"]], String(wi), "data-wk") +
       '<div class="card"><h2>Temps dispo par jour</h2><div class="days" id="days">' + GL.DAYS.map((d, i) =>
-        '<button data-day="' + i + '" aria-label="' + GL.DAYS_LONG[i] + '"><span>' + d + "</span><b>" + (av[i] ? av[i] + "'" : "–") + "</b></button>").join("") + '</div><p class="muted">Touche un jour pour changer (– = pas dispo). Si ton rythme alterne, remplis la semaine B.</p>' +
+        '<button data-day="' + i + '" aria-label="' + GL.DAYS_LONG[i] + '"><span>' + d + "</span><b>" + (av[i] ? av[i] + "'" : "–") + "</b></button>").join("") + '</div><p class="muted">Touche un jour pour changer (– = pas dispo). Si ton rythme alterne (entreprise et école, bureau et télétravail, horaires décalés...), remplis la semaine 2.</p>' +
       '<label class="field"><span>Matériel</span><select id="eq">' + optList(GL.EQUIP, r.equip) + '</select></label>' +
       '<label class="field"><span>Niveau</span><select id="lv">' + optList(GL.LEVELS, r.level) + '</select></label>' +
       '<div class="grid2"><label class="field"><span>Sommeil (h par nuit)</span><input type="number" inputmode="decimal" step="0.5" id="sl" value="' + r.sleep + '"></label>' +
@@ -948,8 +1011,8 @@
   function updateCutOut() {
     const l = state.look, out = $("#cutout");
     if (!l.shape || !GL.FACE_SHAPES[l.shape]) { out.innerHTML = '<div class="card"><p class="muted">Choisis ta forme de visage pour voir les coupes adaptées.</p></div>'; return; }
-    const fsh = GL.FACE_SHAPES[l.shape], cuts = GL.recommendCuts(l.shape, l.hairType, l.length, l.density), notes = GL.hairNotes(l.hairType, l.density);
-    out.innerHTML = '<div class="card"><h2>Visage ' + esc(fsh.label.toLowerCase()) + '</h2><dl class="kv"><dt>Repère</dt><dd>' + esc(fsh.desc) + "</dd><dt>Objectif</dt><dd>" + esc(fsh.goal) + "</dd><dt>À éviter</dt><dd>" + esc(fsh.avoid) + "</dd><dt>Barbe</dt><dd>" + esc(fsh.beard) + "</dd></dl></div>" +
+    const fsh = GL.FACE_SHAPES[l.shape], cuts = GL.recommendCuts(l.shape, l.hairType, l.length, l.density, state.profile.gender), notes = GL.hairNotes(l.hairType, l.density);
+    out.innerHTML = '<div class="card"><h2>Visage ' + esc(fsh.label.toLowerCase()) + '</h2><dl class="kv"><dt>Repère</dt><dd>' + esc(fsh.desc) + "</dd><dt>Objectif</dt><dd>" + esc(fsh.goal) + "</dd><dt>À éviter</dt><dd>" + esc(fsh.avoid) + "</dd>" + (state.profile.gender === "f" ? "" : "<dt>Barbe</dt><dd>" + esc(fsh.beard) + "</dd>") + "</dl></div>" +
       '<div class="card"><h2>Coupes qui te vont</h2>' + (cuts.length ? '<ul class="list">' + cuts.map((c) => {
         const k = GL.cutLinks(c);
         return '<li><span class="n">' + esc(c.name) + "<small>À dire au coiffeur : " + esc(c.how) + '</small></span><span class="p"><a class="lk" href="' + esc(k.images) + '" target="_blank" rel="noopener noreferrer">Photos ›</a><br><a class="lk" href="' + esc(k.pinterest) + '" target="_blank" rel="noopener noreferrer">Pinterest ›</a></span></li>';
@@ -971,6 +1034,8 @@
     else if (deferredPrompt) install = '<button class="btn" id="install">Installer l\'app</button>';
     else install = '<p class="muted">iPhone : touche Partager puis « Sur l\'écran d\'accueil ». Android : menu ⋮ puis « Installer l\'application ».</p>';
     view.innerHTML = '<div class="card"><h2>Profil</h2><label class="field"><span>Prénom</span><input type="text" data-p="name" value="' + esc(p.name) + '"></label>' +
+      '<label class="field"><span>Genre</span><select id="gender">' + optList(GL.GENDERS, p.gender) + "</select></label>" +
+      '<label class="field"><span>Situation</span><select id="status"><option value=""' + (p.status ? "" : " selected") + '>À préciser</option>' + optList(GL.STATUSES, p.status) + "</select></label>" +
       f("Revenu mensuel net, aides comprises (€)", "income", 25, p.income) + '<div class="grid2">' + f("Loyer + charges (€)", "rent", 5, p.rent) + f("Autres charges fixes (€)", "otherFixed", 5, p.otherFixed) + "</div>" +
       f("Courses et dépenses courantes (€)", "essentials", 10, p.essentials, "Estimation modifiable") +
       '<div class="grid2">' + f("Épargne visée (% du revenu)", "savingsRate", 1, Math.round(p.savingsRate * 100)) + f("Vêtements (% du revenu annuel)", "clothingPct", 0.5, +(p.clothingPct * 100).toFixed(1)) + "</div>" +
@@ -991,6 +1056,8 @@
       else p[k] = Math.max(num(inp.value), 0);
       save();
     }));
+    $("#gender").addEventListener("change", (e) => { p.gender = e.target.value; state.body.sex = p.gender; save(); });
+    $("#status").addEventListener("change", (e) => { if (e.target.value) applyStatus(e.target.value); else { p.status = ""; save(); } });
     const ib = $("#install");
     if (ib) ib.addEventListener("click", async () => { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; viewMe(); });
 
