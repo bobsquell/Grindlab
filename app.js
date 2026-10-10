@@ -22,7 +22,11 @@
       wardrobeBudget: null,
       accounts: GL.defaultAccounts(),
       jobs: { type: "alternance", query: "chef de projet IT", cities: ["paris"], targetNet: 2500 },
-      ui: { tab: "home", pyr: "nat", sel: null, workSub: "scen", accSub: "acc" },
+      body: Object.assign({}, GL.DEFAULT_BODY, { weights: [], rhythm: JSON.parse(JSON.stringify(GL.DEFAULT_RHYTHM)) }),
+      prices: { date: "", city: "", data: {} },
+      secondHand: false,
+      look: Object.assign({}, GL.DEFAULT_LOOK),
+      ui: { tab: "home", pyr: "nat", sel: null, workSub: "scen", accSub: "acc", bodySub: "goal", styleSub: "wear", sportWeek: 0, interestNote: "" },
     };
   }
   function merge(raw) {
@@ -33,8 +37,15 @@
       scenarios: Array.isArray(raw.scenarios) ? raw.scenarios : d.scenarios,
       invest: Object.assign(d.invest, raw.invest),
       wardrobeBudget: typeof raw.wardrobeBudget === "number" ? raw.wardrobeBudget : null,
-      accounts: Array.isArray(raw.accounts) && raw.accounts.length ? raw.accounts.map((a) => Object.assign({ history: [], contributed: 0, rate: 0, openDate: "", balance: 0 }, a)) : d.accounts,
+      accounts: Array.isArray(raw.accounts) && raw.accounts.length ? raw.accounts.map((a) => Object.assign({ history: [], contributed: 0, rate: 0, openDate: "", balance: 0, autoInterest: true, interestLog: [] }, a)) : d.accounts,
       jobs: Object.assign(d.jobs, raw.jobs),
+      body: Object.assign(d.body, raw.body, {
+        weights: raw.body && Array.isArray(raw.body.weights) ? raw.body.weights : [],
+        rhythm: Object.assign(d.body.rhythm, raw.body && raw.body.rhythm),
+      }),
+      prices: Object.assign(d.prices, raw.prices),
+      secondHand: !!raw.secondHand,
+      look: Object.assign(d.look, raw.look),
       ui: Object.assign(d.ui, raw.ui),
     };
   }
@@ -63,6 +74,7 @@
     home: { title: "Accueil", fn: viewHome },
     accounts: { title: "Comptes", fn: viewAccounts },
     work: { title: "Revenus", fn: viewWork },
+    body: { title: "Corps", fn: viewBody },
     style: { title: "Style", fn: viewStyle },
     me: { title: "Moi", fn: viewMe },
   };
@@ -100,6 +112,27 @@
     "Très aisés": ["plus de 2 fois la moyenne", "alternant très bien payé, ou salaire plus forte aide familiale"],
   };
 
+  function interestCard() {
+    return state.ui.interestNote ? '<div class="card"><h2>Intérêts crédités</h2><p>' + esc(state.ui.interestNote) + '</p><p class="muted">Estimation ajoutée automatiquement au 31 décembre (taux et solde connus). Corrige le solde si ta banque indique un autre montant.</p><button class="btn alt" data-dismiss-int>OK</button></div>' : "";
+  }
+  function goalsCard() {
+    const b = state.body, p = state.profile;
+    const rows = [];
+    const t = GL.calorieTarget(b), wk = GL.weeksToTarget(b);
+    let phys = "Cible " + GL.nf(t.kcal) + " kcal et " + GL.macroTargets(b, t.kcal).protein + " g de protéines par jour.";
+    if (b.goal !== "maintain" && wk) phys = kgf(b.weight) + " vers " + kgf(b.targetWeight) + " (environ " + wk + " semaines). " + phys;
+    else if (b.goal === "maintain") phys = "Maintien autour de " + kgf(b.weight) + ". " + phys;
+    rows.push(["Physique", phys, "body"]);
+    const worth = GL.totalWorth(state.accounts), target = state.invest.target || 0;
+    rows.push(["Finances", worth > 0 && target > 0 ? eur(worth) + " suivis sur " + eur(target) + " visés (" + Math.min(100, Math.round((worth / target) * 100)) + " %)." : "Renseigne tes comptes pour suivre ton objectif.", "accounts"]);
+    const bud = state.wardrobeBudget == null ? Math.round(GL.budget(p).clothingYear) : state.wardrobeBudget;
+    const plan = GL.planWardrobe(GL.CATALOG, p.style, bud);
+    rows.push(["Style", plan.rows.length + " pièces prévues pour " + eur(plan.spent) + " sur " + eur(bud) + " de budget.", "style"]);
+    return '<div class="card"><h2>Tes objectifs</h2><ul class="list">' + rows.map((r) =>
+      '<li><span class="n">' + esc(r[0]) + "<small>" + esc(r[1]) + '</small></span><a class="lk" href="#" data-go="' + r[2] + '">Voir ›</a></li>').join("") + "</ul></div>";
+  }
+  const kgf = (x) => x.toFixed(1).replace(".", ",") + " kg";
+
   function viewHome() {
     const p = state.profile, b = GL.budget(p);
     const worth = GL.totalWorth(state.accounts);
@@ -111,11 +144,13 @@
       '<div><span class="lbl">Marge</span><b>' + eur(b.freeAfterSavings) + "</b></div></div></section>" +
       (ins.length ? '<div class="card"><h2>À regarder</h2><ul class="list">' + ins.map((i) =>
         '<li class="t-' + i.tone + '"><span class="n">' + esc(i.text) + "</span></li>").join("") + "</ul></div>" : "") +
+      interestCard() + goalsCard() +
       (worth > 0 ? '<div class="card"><h2>Patrimoine suivi</h2><div class="big2">' + eur(worth) + '</div><p class="muted">' + state.accounts.filter((a) => a.balance > 0).map((a) => esc(a.name) + " : " + eur(a.balance)).join(" · ") + "</p></div>" : "") +
       segHtml([["nat", "France"], ["stu", "Étudiants"]], state.ui.pyr, "data-pyr") +
       '<div class="card"><div id="pyr"></div></div><div class="card" id="pyrinfo"></div>' +
       '<div class="card"><h2>Fonds de secours cible</h2><div class="big2">' + eur(b.emergency) +
       '</div><p class="muted">3 mois de loyer, charges et dépenses courantes.</p></div>';
+    view.querySelectorAll("[data-go]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); go(a.dataset.go); }));
     view.querySelector(".seg").addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-pyr]");
       if (!btn) return;
@@ -202,7 +237,8 @@
       extra = '<div class="grid2"><label class="field"><span>Versements cumulés (€)</span><input type="number" inputmode="decimal" data-k="contributed" value="' + a.contributed + '"></label>' +
         '<label class="field"><span>Date d\'ouverture</span><input type="date" data-k="openDate" value="' + esc(a.openDate || "") + '"></label></div>';
     } else if (a.type === "livret") {
-      extra = '<label class="field"><span>Taux (% par an)</span><input type="number" inputmode="decimal" step="0.05" data-k="rate" value="' + a.rate + '"><em>À vérifier : le taux officiel est révisé deux fois par an.</em></label>';
+      extra = '<label class="field"><span>Taux (% par an)</span><input type="number" inputmode="decimal" step="0.05" data-k="rate" value="' + a.rate + '"><em>À vérifier : le taux officiel est révisé deux fois par an.</em></label>' +
+        '<div class="head" style="margin:6px 0"><label class="switch"><input type="checkbox" data-k="autoInterest" ' + (a.autoInterest !== false ? "checked" : "") + ' aria-label="Intérêts automatiques"><i></i></label><span>Ajouter les intérêts chaque 31 décembre (estimation)</span></div>';
     }
     return '<div class="card acc" data-i="' + i + '"><div class="head">' +
       '<input type="text" data-k="name" value="' + esc(a.name) + '" aria-label="Nom du compte"><span class="tag">' + esc(TYPE_LABELS[a.type] || "Autre") + "</span>" +
@@ -214,7 +250,7 @@
   }
 
   function viewAccountList() {
-    host.innerHTML = '<div id="accHero"></div><div id="accList">' + state.accounts.map(accCard).join("") + "</div>" +
+    host.innerHTML = interestCard() + '<div id="accHero"></div><div id="accList">' + state.accounts.map(accCard).join("") + "</div>" +
       '<div class="grid3"><button class="btn alt" data-add="pea">+ PEA</button><button class="btn alt" data-add="livret">+ Livret</button><button class="btn alt" data-add="other">+ Autre</button></div>' +
       '<div class="card"><h2>Pourquoi pas de connexion directe ?</h2><p class="muted">Trade Republic et Boursorama n\'offrent pas d\'accès public pour une app perso, et saisir tes identifiants bancaires dans une app non officielle est risqué. GrindLab ne te les demande jamais : tu saisis tes soldes ou tu importes l\'export CSV de ton espace client. Sur Boursorama, exporte les opérations du compte en CSV ; sur Trade Republic, exporte tes transactions si l\'option est disponible. Si ton fichier n\'est pas reconnu, saisis le solde à la main.</p>' +
       '<p class="muted">Suivi et informations générales uniquement : GrindLab ne recommande aucun placement. Pour choisir des investissements, vois un professionnel agréé.</p></div>';
@@ -224,10 +260,12 @@
       if (!card || e.target.matches("[data-imp]")) return;
       const a = state.accounts[+card.dataset.i], k = e.target.dataset.k;
       if (!a || !k) return;
-      if (k === "name" || k === "openDate") a[k] = e.target.value;
+      if (k === "autoInterest") { a.autoInterest = e.target.checked; if (a.autoInterest) runInterest(); }
+      else if (k === "name" || k === "openDate") a[k] = e.target.value;
       else if (k === "balance") GL.addSnapshot(a, GL.todayISO(), num(e.target.value));
       else a[k] = num(e.target.value);
       save(); updateAccOut();
+      if (k === "autoInterest") viewAccountList();
     }
     list.addEventListener("input", onEdit);
     list.addEventListener("click", (e) => {
@@ -268,6 +306,8 @@
         const s = GL.livretStats(a);
         lines.push("Intérêts annuels estimés : " + eur(s.interest));
         lines.push("Plafond : " + Math.round(s.capUsed * 100) + " % de " + eur(GL.LIVRET_CAP));
+        const lg = (a.interestLog || [])[(a.interestLog || []).length - 1];
+        if (lg) lines.push("Dernier crédit automatique : +" + lg.amount.toFixed(2).replace(".", ",") + " € le " + lg.date.split("-").reverse().join("/"));
       }
       el.textContent = lines.join(" · ");
     });
@@ -467,24 +507,36 @@
 
   /* ---------------- Style ---------------- */
   function viewStyle() {
+    view.innerHTML = segHtml([["wear", "Vêtements"], ["cut", "Coupe"]], state.ui.styleSub, "data-sub") + '<div id="sub"></div>';
+    host = $("#sub");
+    view.querySelector(".seg").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-sub]");
+      if (!b) return;
+      state.ui.styleSub = b.dataset.sub; save(); viewStyle();
+    });
+    if (state.ui.styleSub === "cut") viewCut(); else viewWardrobe();
+  }
+  function viewWardrobe() {
     const p = state.profile, b = GL.budget(p);
     const budget = state.wardrobeBudget == null ? Math.round(b.clothingYear) : state.wardrobeBudget;
-    view.innerHTML = '<div class="seg" role="group" aria-label="Style">' + GL.STYLES.map((s) =>
+    host.innerHTML = '<div class="seg" role="group" aria-label="Style">' + GL.STYLES.map((s) =>
       '<button data-style="' + s + '" aria-pressed="' + (p.style === s) + '">' + GL.STYLE_LABELS[s] + "</button>").join("") + "</div>" +
       '<div class="card"><label class="field"><span>Budget vêtements sur 12 mois (€)</span><input type="number" inputmode="decimal" id="wb" value="' + budget + '">' +
-      "<em>Par défaut : " + Math.round(p.clothingPct * 100) + " % de ton revenu annuel. Prix du catalogue : estimations.</em></label></div><div id=\"styleout\"></div>";
-    view.querySelector(".seg").addEventListener("click", (e) => {
+      "<em>Par défaut : " + Math.round(p.clothingPct * 100) + " % de ton revenu annuel. Prix du catalogue : estimations.</em></label></div>" +
+      '<div class="card"><div class="head" style="display:flex;align-items:center;gap:10px"><label class="switch"><input type="checkbox" id="sh" ' + (state.secondHand ? "checked" : "") + ' aria-label="Seconde main"><i></i></label><span>Acheter en seconde main (Vinted) : prix estimés à environ 55 % du neuf</span></div></div><div id="styleout"></div>';
+    host.querySelector(".seg").addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-style]");
       if (!btn) return;
-      p.style = btn.dataset.style; save(); viewStyle();
+      p.style = btn.dataset.style; save(); viewWardrobe();
     });
+    $("#sh").addEventListener("change", (e) => { state.secondHand = e.target.checked; save(); updateStyleOut(); });
     $("#wb").addEventListener("input", (e) => { state.wardrobeBudget = e.target.value === "" ? null : Math.max(num(e.target.value), 0); save(); updateStyleOut(); });
     updateStyleOut();
   }
   function updateStyleOut() {
     const p = state.profile, b = GL.budget(p);
     const budget = state.wardrobeBudget == null ? Math.round(b.clothingYear) : state.wardrobeBudget;
-    const plan = GL.planWardrobe(GL.CATALOG, p.style, budget);
+    const plan = GL.planWardrobe(state.secondHand ? GL.secondHandCatalog(GL.CATALOG) : GL.CATALOG, p.style, budget);
     const pct = budget > 0 ? Math.min(100, (plan.spent / budget) * 100) : 0;
     let html = '<div class="card"><h2>Dépensé</h2><div class="big2">' + eur(plan.spent) + ' <span class="muted">sur ' + eur(budget) + '</span></div><div class="bar"><i style="width:' + pct.toFixed(0) + '%"></i></div></div>';
     if (plan.rows.length) {
@@ -492,12 +544,418 @@
         const brands = GL.brandsFor(r.piece, r.category, r.tier, p.style);
         return '<li><span class="n">' + esc(r.piece) + "<small>" + esc(r.category) + " · " + esc(GL.TIER_LABELS[r.tier]) + (r.essential ? "" : " · optionnel") + "</small>" +
           (brands.length ? '<small class="brands">' + esc(brands.join(" · ")) + "</small>" : "") +
+          '<details><summary>Où l\'acheter</summary><div class="linkgrid">' + GL.clothingLinks(r.piece, brands).map((l) =>
+            '<a class="btn alt" href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">' + esc(l.name) + "</a>").join("") + "</div></details>" +
           '</span><span class="p">' + eur(r.price) + '<small class="muted"><br>' + r.cpw.toFixed(2).replace(".", ",") + " € / port</small></span></li>";
       }).join("") + "</ul></div>";
     } else html += '<div class="card"><p class="muted">Budget trop bas pour une première pièce.</p></div>';
     if (plan.postponed.length) html += '<p class="muted">À repousser faute de budget : ' + esc(plan.postponed.join(", ")) + ".</p>";
-    html += '<div class="card"><h2>Astuces</h2><p class="muted">Pour monter d\'une gamme sans payer plus, regarde la seconde main (Vinted, Vestiaire Collective) et les soldes. Les marques sont des suggestions sans partenariat : prix et disponibilité changent, compare avant d\'acheter.</p></div>';
+    html += '<div class="card"><h2>Astuces</h2><p class="muted">Les liens ouvrent une recherche sur Vinted (seconde main) ou sur le neuf : ce ne sont pas des annonces précises, les articles et les prix changent tout le temps. Pense à filtrer ta taille et l\'état. Les marques sont des suggestions sans partenariat.</p></div>';
     $("#styleout").innerHTML = html;
+  }
+
+  /* ---------------- Corps : objectif, assiette, courses, sport ---------------- */
+  const MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+  const month = () => new Date().getMonth() + 1;
+  const optList = (obj, cur) => Object.keys(obj).map((k) => '<option value="' + k + '"' + (k === cur ? " selected" : "") + ">" + esc(Array.isArray(obj[k]) ? obj[k][1] : obj[k]) + "</option>").join("");
+
+  function viewBody() {
+    view.innerHTML = segHtml([["goal", "Objectif"], ["plate", "Assiette"], ["shop", "Courses"], ["sport", "Sport"]], state.ui.bodySub, "data-sub") + '<div id="sub"></div>';
+    host = $("#sub");
+    view.querySelector(".seg").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-sub]");
+      if (!b) return;
+      state.ui.bodySub = b.dataset.sub; save(); viewBody();
+    });
+    ({ goal: viewBodyGoal, plate: viewPlate, shop: viewShop, sport: viewSport }[state.ui.bodySub] || viewBodyGoal)();
+  }
+
+  function weightChart(ws) {
+    const W = 360, H = 150, pl = 44, pr = 8, pt = 10, pb = 22, n = ws.length;
+    const vals = ws.map((w) => w.kg);
+    let mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    if (mx - mn < 1) { mn -= 0.5; mx += 0.5; }
+    const x = (i) => pl + (W - pl - pr) * (n === 1 ? 0.5 : i / (n - 1));
+    const y = (v) => pt + (H - pt - pb) * (1 - (v - mn) / (mx - mn));
+    let svg = '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Évolution du poids">';
+    [mn, (mn + mx) / 2, mx].forEach((v) => {
+      svg += '<line class="grid" x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/><text x="' + (pl - 6) + '" y="' + (y(v) + 4).toFixed(1) + '" text-anchor="end">' + v.toFixed(1).replace(".", ",") + "</text>";
+    });
+    svg += '<text x="' + pl + '" y="' + (H - 5) + '">' + esc(ws[0].date) + '</text><text x="' + (W - pr) + '" y="' + (H - 5) + '" text-anchor="end">' + esc(ws[n - 1].date) + "</text>";
+    svg += '<polyline fill="none" stroke="var(--c2)" stroke-width="2.5" stroke-linejoin="round" points="' + ws.map((w, i) => x(i).toFixed(1) + "," + y(w.kg).toFixed(1)).join(" ") + '"/>';
+    ws.forEach((w, i) => { svg += '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(w.kg).toFixed(1) + '" r="3" fill="var(--c2)"/>'; });
+    return svg + "</svg>";
+  }
+
+  function viewBodyGoal() {
+    const b = state.body;
+    const nf2 = (label, k, step) => '<label class="field"><span>' + label + '</span><input type="number" inputmode="decimal" step="' + step + '" data-b="' + k + '" value="' + b[k] + '"></label>';
+    host.innerHTML = '<div id="bodyout"></div>' +
+      '<div class="card"><h2>Ton profil</h2>' + segHtml([["m", "Homme"], ["f", "Femme"]], b.sex, "data-bsex") +
+      '<div class="grid3">' + nf2("Âge", "age", 1) + nf2("Taille (cm)", "height", 1) + nf2("Poids (kg)", "weight", 0.1) + "</div>" +
+      '<label class="field"><span>Activité</span><select data-bsel="activity">' + optList(GL.ACTIVITY, b.activity) + "</select></label>" +
+      '<label class="field"><span>Objectif</span><select data-bsel="goal">' + optList(GL.BODY_GOALS, b.goal) + "</select></label>" +
+      '<div class="grid2">' + nf2("Poids visé (kg)", "targetWeight", 0.5) + nf2("Séances par semaine", "sessions", 1) + "</div>" +
+      segHtml([["omni", "Omnivore"], ["vege", "Végétarien"]], b.diet, "data-bdiet") + "</div>" +
+      '<div class="card"><h2>Pesée</h2><div class="grid2"><label class="field"><span>Poids du jour (kg)</span><input type="number" inputmode="decimal" step="0.1" id="wnew" value="' + b.weight + '"></label>' +
+      '<button class="btn" id="wadd" style="align-self:end">Enregistrer</button></div><div id="wlog"></div></div>' +
+      '<p class="muted">Estimations générales (formule de Mifflin-St Jeor, repères de santé publique). Ce n\'est pas un avis médical : en cas de pathologie, de grossesse ou de doute, vois un médecin ou un diététicien. Tes données restent sur cet appareil.</p>';
+
+    const upd = () => { save(); updateBodyOut(); };
+    host.querySelectorAll("input[data-b]").forEach((inp) => inp.addEventListener("input", () => {
+      const k = inp.dataset.b, v = num(inp.value);
+      b[k] = k === "age" ? Math.min(Math.max(v, 14), 100) : k === "sessions" ? Math.min(Math.max(Math.round(v), 0), 14) : Math.max(v, 0);
+      upd();
+    }));
+    host.querySelectorAll("select[data-bsel]").forEach((s) => s.addEventListener("change", () => { b[s.dataset.bsel] = s.value; upd(); }));
+    host.querySelectorAll("[data-bsex]").forEach((btn) => btn.addEventListener("click", () => { b.sex = btn.dataset.bsex; save(); viewBodyGoal(); }));
+    host.querySelectorAll("[data-bdiet]").forEach((btn) => btn.addEventListener("click", () => { b.diet = btn.dataset.bdiet; b.basket = null; save(); viewBodyGoal(); }));
+    $("#wadd").addEventListener("click", () => {
+      const kg = num($("#wnew").value);
+      if (kg < 25 || kg > 300) return;
+      GL.addWeight(b, GL.todayISO(), kg); save(); viewBodyGoal();
+    });
+    updateBodyOut();
+  }
+
+  function updateBodyOut() {
+    const b = state.body, t = GL.calorieTarget(b), m = GL.macroTargets(b, t.kcal), bmiV = GL.bmi(b);
+    const wk = GL.weeksToTarget(b), tr = GL.weightTrend(b);
+    let goalLine = "";
+    if (b.goal === "lose" && b.targetWeight < b.weight && wk) goalLine = "Pour " + kgf(b.weight - b.targetWeight) + " en moins : environ " + wk + " semaines à ce rythme.";
+    else if (b.goal === "gain" && b.targetWeight > b.weight && wk) goalLine = "Pour " + kgf(b.targetWeight - b.weight) + " en plus : au mieux " + wk + " semaines (la prise de muscle est souvent plus lente).";
+    else if (b.goal !== "maintain") goalLine = "Ton poids visé ne correspond pas à l'objectif choisi.";
+    let warn = "";
+    if (t.note) warn += '<p class="warn">' + esc(t.note) + "</p>";
+    if (t.floorApplied) warn += '<p class="warn">Cible remontée au minimum de sécurité : ne descends pas plus bas sans suivi médical.</p>';
+    if (tr) warn += '<p class="' + (tr.tooFast ? "warn" : "muted") + '">Tendance : ' + (tr.perWeek >= 0 ? "+" : "−") + Math.abs(tr.perWeek).toFixed(2).replace(".", ",") + " kg par semaine sur " + Math.round(tr.days) + " jours" + (tr.tooFast ? " : c'est rapide, vise moins de 1 % du poids par semaine." : ".") + "</p>";
+    $("#bodyout").innerHTML = '<section class="card hero"><div class="lbl">Cible par jour</div><div class="big">' + GL.nf(t.kcal) + ' kcal</div>' +
+      '<div class="row"><div><span class="lbl">Protéines</span><b>' + m.protein + ' g</b></div><div><span class="lbl">Glucides</span><b>' + m.carbs + ' g</b></div><div><span class="lbl">Lipides</span><b>' + m.fat + ' g</b></div></div></section>' +
+      '<div class="card"><dl class="kv"><dt>Métabolisme de base</dt><dd>' + GL.nf(t.bmr) + " kcal</dd><dt>Dépense totale</dt><dd>" + GL.nf(t.tdee) + " kcal</dd><dt>Écart choisi</dt><dd>" + (t.delta >= 0 ? "+" : "−") + Math.abs(t.delta) + " kcal par jour</dd>" +
+      "<dt>Fibres</dt><dd>" + m.fiber + " g ou plus</dd><dt>Fruits et légumes</dt><dd>5 portions (environ 400 g) ou plus</dd><dt>IMC</dt><dd>" + (bmiV > 0 ? bmiV.toFixed(1).replace(".", ",") + " (" + esc(GL.bmiLabel(bmiV)) + ")" : "–") + "</dd></dl>" +
+      (goalLine ? "<p>" + esc(goalLine) + "</p>" : "") + warn + '<p class="muted">L\'IMC est un repère grossier : il ne distingue pas muscle et graisse.</p></div>';
+    const wl = $("#wlog");
+    if (wl) {
+      const ws = b.weights || [];
+      wl.innerHTML = ws.length >= 2 ? weightChart(ws.slice(-30)) : '<p class="muted">Enregistre ton poids de temps en temps (une fois par semaine suffit) pour voir la tendance.</p>';
+    }
+  }
+
+  function viewPlate() {
+    const b = state.body, t = GL.calorieTarget(b), m = GL.macroTargets(b, t.kcal);
+    if (!b.basket) b.basket = GL.suggestedBasket(b, month(), t.kcal, m.protein);
+    save();
+    const groups = {};
+    host.innerHTML = '<p class="muted">Ton panier d\'une semaine (en grammes). Modifie les quantités : le bilan se met à jour. La base proposée suit ta cible et la saison.</p>' +
+      '<button class="btn alt" id="regen">Régénérer une base pour ma cible</button><div id="plateout"></div><div id="plist"></div>' +
+      '<div class="card"><h2>Ajouter un aliment</h2><select id="addfood">' + Object.keys(GL.FOOD_CATS).map((c) =>
+        '<optgroup label="' + esc(GL.FOOD_CATS[c]) + '">' + GL.FOODS.filter((f) => f.cat === c).map((f) => '<option value="' + f.id + '">' + esc(f.name) + "</option>").join("") + "</optgroup>").join("") +
+      '</select><button class="btn alt" id="addbtn">Ajouter</button></div>' +
+      '<div class="card"><h2>Échanges simples</h2><ul class="list">' + GL.SWAPS.map((s) => '<li><span class="n">' + esc(s[0]) + "<small>" + esc(s[1]) + "</small></span></li>").join("") + "</ul></div>" +
+      '<p class="muted">Valeurs nutritionnelles moyennes (ordre de grandeur, proches des tables Ciqual) et prix indicatifs de grande distribution : ils varient selon le magasin et la saison.</p>';
+    void groups;
+    const renderList = () => {
+      const ids = Object.keys(b.basket).sort((x, y) => GL.FOODS.indexOf(GL.FOOD_BY_ID[x]) - GL.FOODS.indexOf(GL.FOOD_BY_ID[y]));
+      $("#plist").innerHTML = '<div class="card"><h2>Panier de la semaine</h2><ul class="list">' + ids.map((id) => {
+        const f = GL.FOOD_BY_ID[id];
+        return '<li data-id="' + id + '"><span class="n">' + esc(f.name) + "<small>" + esc(GL.FOOD_CATS[f.cat]) + (GL.isFV(f) && GL.inSeason(f, month()) && f.season ? " · de saison" : "") + '</small></span><input type="number" inputmode="numeric" step="50" data-g value="' + b.basket[id] + '" aria-label="Grammes par semaine : ' + esc(f.name) + '"><button class="x" data-del aria-label="Retirer">×</button></li>';
+      }).join("") + "</ul></div>";
+    };
+    $("#plist").addEventListener("input", (e) => {
+      const li = e.target.closest("li[data-id]");
+      if (!li || !e.target.matches("[data-g]")) return;
+      b.basket[li.dataset.id] = Math.max(num(e.target.value), 0); save(); updatePlateOut();
+    });
+    $("#plist").addEventListener("click", (e) => {
+      const li = e.target.closest("li[data-id]");
+      if (!li || !e.target.closest("[data-del]")) return;
+      delete b.basket[li.dataset.id]; save(); renderList(); updatePlateOut();
+    });
+    $("#addbtn").addEventListener("click", () => {
+      const id = $("#addfood").value;
+      if (!(b.basket[id] > 0)) b.basket[id] = 500;
+      save(); renderList(); updatePlateOut();
+    });
+    $("#regen").addEventListener("click", () => {
+      const tt = GL.calorieTarget(b);
+      b.basket = GL.suggestedBasket(b, month(), tt.kcal, GL.macroTargets(b, tt.kcal).protein); save(); renderList(); updatePlateOut();
+    });
+    renderList(); updatePlateOut();
+  }
+
+  function updatePlateOut() {
+    const b = state.body, t = GL.calorieTarget(b), m = GL.macroTargets(b, t.kcal), tot = GL.basketTotals(b.basket), d = tot.day;
+    const row = (label, v, target, unit, goodHigh) => {
+      const pct = target > 0 ? Math.min(100, (v / target) * 100) : 0;
+      return '<li><span class="n">' + label + '<div class="bar"><i style="width:' + pct.toFixed(0) + '%"></i></div></span><span class="p">' + GL.nf(v) + " / " + GL.nf(target) + " " + unit + "</span></li>";
+    };
+    $("#plateout").innerHTML = '<div class="card"><h2>Bilan par jour (moyenne)</h2><ul class="list">' +
+      row("Calories", d.kcal, t.kcal, "kcal") + row("Protéines", d.p, m.protein, "g") + row("Glucides", d.c, m.carbs, "g") + row("Lipides", d.f, m.fat, "g") +
+      row("Fibres", d.fib, m.fiber, "g") + row("Fruits et légumes", d.fv, 400, "g") + "</ul>" +
+      '<p class="muted">Budget estimé : ' + eur(tot.costWeek) + " par semaine (" + eur(tot.costWeek / 7) + " par jour).</p></div>" +
+      '<div class="card"><h2>Ajustements</h2><ul class="list">' + GL.basketAdvice(tot, t, m, b).map((a) => '<li class="t-' + a.tone + '"><span class="n">' + esc(a.text) + "</span></li>").join("") + "</ul></div>";
+  }
+
+  const realPrice = (f) => {
+    const r = state.prices && state.prices.data && state.prices.data[f.id];
+    return r && r.n >= 3 ? r : null;
+  };
+  function viewShop() {
+    const b = state.body, mo = month();
+    const season = GL.seasonalProduce(mo);
+    const fruits = season.filter((f) => f.cat === "fruit"), vegs = season.filter((f) => f.cat === "veg");
+    const chips = (arr) => '<div class="chips wrap">' + arr.map((f) => {
+      const r = realPrice(f);
+      return '<span class="chip">' + esc(f.name) + " <b>" + (r ? r.median : f.price).toFixed(1).replace(".", ",") + " €/kg</b></span>";
+    }).join("") + "</div>";
+    let list = '<p class="muted">Génère ton panier dans l\'onglet Assiette pour obtenir la liste de courses.</p>', tools = "";
+    const ids = b.basket ? Object.keys(b.basket).filter((id) => b.basket[id] > 0) : [];
+    if (ids.length) {
+      let total = 0;
+      const body = Object.keys(GL.FOOD_CATS).map((c) => {
+        const items = GL.FOODS.filter((f) => f.cat === c && b.basket[f.id] > 0);
+        if (!items.length) return "";
+        return '<h2 class="sep">' + esc(GL.FOOD_CATS[c]) + '</h2><ul class="list">' + items.map((f) => {
+          const g = b.basket[f.id], r = realPrice(f), ppk = r ? r.median : f.price;
+          total += (g / 1000) * ppk;
+          let real = "";
+          if (r) {
+            const chains = Object.keys(r.byChain).map((k) => [k, r.byChain[k]]).sort((x, y) => x[1].median - y[1].median);
+            real = '<small class="brands">Relevé : ' + r.median.toFixed(2).replace(".", ",") + " €/kg (" + r.n + " relevés)" + (chains.length ? " · le moins cher : " + esc(chains[0][0]) + " " + chains[0][1].median.toFixed(2).replace(".", ",") + " €/kg" : "") + "</small>";
+          }
+          const links = GL.foodSearchLinks(f.name.replace(/\(.*?\)/g, "").trim()).map((l) => '<a class="btn alt" href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">' + esc(l.name) + "</a>").join("");
+          return '<li><details style="flex:1"><summary style="display:flex;justify-content:space-between;gap:10px;color:var(--text);font-size:16px"><span>' + esc(f.name) + '</span><span class="p">' + (g >= 1000 ? (g / 1000).toFixed(1).replace(".", ",") + " kg" : Math.round(g) + " g") + ' <small class="muted">~' + eur((g / 1000) * ppk) + "</small></span></summary>" +
+            real + '<div class="linkgrid">' + links + "</div></details></li>";
+        }).join("") + "</ul>";
+      }).join("");
+      list = '<p class="muted">Touche un article pour le chercher chez Lidl, Aldi, Carrefour, Auchan, Leclerc ou Intermarché.</p>' + body + '<p class="big2">' + eur(total) + ' <span class="muted">estimés</span></p>';
+      const when = state.prices && state.prices.date ? "Dernière recherche : " + state.prices.date.split("-").reverse().join("/") + "." : "";
+      tools = '<div class="card"><h2>Prix réels</h2><p class="muted">Cherche les prix relevés pour tes fruits, légumes et pommes de terre dans Open Prices, une base ouverte alimentée par des contributeurs (tickets et étiquettes). Les sites des enseignes n\'ont pas d\'accès public : les relevés peuvent être rares ou anciens. ' + when + '</p>' +
+        '<button class="btn" id="getprices">Chercher les prix réels</button><p class="muted" id="pstatus"></p></div>';
+    }
+    host.innerHTML = '<div class="card"><h2>De saison en ' + MONTHS[mo - 1] + "</h2>" +
+      (fruits.length ? '<p class="muted">Fruits</p>' + chips(fruits) : "") + (vegs.length ? '<p class="muted">Légumes</p>' + chips(vegs) : "") +
+      '<p class="muted">De saison, c\'est généralement plus savoureux, moins cher et moins transporté. Prix indicatifs (ou relevés si tu as lancé la recherche).</p></div>' +
+      tools + '<div class="card"><h2>Liste de courses</h2>' + list + "</div>" +
+      '<div class="card"><h2>Où acheter</h2><label class="field"><span>Ta ville</span><input type="text" id="city" value="' + esc(b.city || "") + '"></label><ul class="list" id="stores"></ul></div>' +
+      '<div class="card"><h2>Astuces pour payer moins</h2><ul class="list">' +
+      ["Compare toujours le prix au kilo, pas au paquet.", "Prends les fruits et légumes de saison, et les surgelés nature pour le reste.", "Légumineuses, œufs, flocons d'avoine et riz sont parmi les protéines et glucides les moins chers.", "Fais ta liste après avoir regardé ton frigo, et ne va pas faire les courses affamé.", "Cuisine en double le dimanche : tu évites les plats préparés de la semaine.", "L'appli Open Food Facts affiche le Nutri-Score et le niveau de transformation d'un produit en scannant son code-barres."].map((x) => '<li><span class="n">' + esc(x) + "</span></li>").join("") + "</ul></div>";
+    const renderStores = () => {
+      $("#stores").innerHTML = GL.STORES.map((s) => '<li><span class="n">' + esc(s.name) + ' <span class="tag">' + esc(s.price) + "</span><small>" + esc(s.best) + "</small><small>" + esc(s.note) + '</small></span><a class="lk" href="' + esc(GL.storeLink(s, b.city)) + '" target="_blank" rel="noopener noreferrer">Plan ›</a></li>').join("");
+    };
+    $("#city").addEventListener("input", (e) => { b.city = e.target.value; save(); renderStores(); });
+    renderStores();
+    const gp = $("#getprices");
+    if (gp) gp.addEventListener("click", () => fetchRealPrices(ids, gp, $("#pstatus")));
+  }
+
+  async function fetchJson(url, ms) {
+    // Dans l'APK, on passe par le client HTTP natif de Capacitor (pas de blocage CORS).
+    const cap = typeof window !== "undefined" && window.Capacitor;
+    if (cap && cap.isNativePlatform && cap.isNativePlatform() && cap.Plugins && cap.Plugins.CapacitorHttp) {
+      const r = await withTimeout(cap.Plugins.CapacitorHttp.request({ method: "GET", url, headers: { Accept: "application/json" }, responseType: "json" }), ms || 12000);
+      if (!r || r.status < 200 || r.status >= 300) throw new Error("HTTP " + (r && r.status));
+      return typeof r.data === "string" ? JSON.parse(r.data) : r.data;
+    }
+    const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const t = setTimeout(() => ctl && ctl.abort(), ms || 12000);
+    try {
+      const r = await fetch(url, ctl ? { signal: ctl.signal, headers: { Accept: "application/json" } } : undefined);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return await r.json();
+    } finally { clearTimeout(t); }
+  }
+  async function fetchRealPrices(ids, btn, status) {
+    const b = state.body, today = GL.todayISO();
+    const todo = ids.filter((id) => GL.OP_TAGS[id]);
+    if (!todo.length) { status.textContent = "Aucun fruit ni légume dans ton panier."; return; }
+    btn.disabled = true;
+    const data = {}; let done = 0, fail = 0;
+    status.textContent = "Recherche en cours (0/" + todo.length + ")…";
+    const queue = todo.slice();
+    const worker = async () => {
+      while (queue.length) {
+        const id = queue.shift();
+        try { data[id] = GL.summarizePrices(await fetchJson(GL.openPricesUrl(id, b.city, today, 120))); }
+        catch (e) { fail++; }
+        done++; status.textContent = "Recherche en cours (" + done + "/" + todo.length + ")…";
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    btn.disabled = false;
+    if (fail === todo.length) { status.textContent = "Open Prices est injoignable (hors ligne ou accès bloqué par le navigateur). Réessaie avec du réseau."; return; }
+    state.prices = { date: today, city: b.city || "", data }; save();
+    viewShop();
+    const st = $("#pstatus");
+    if (st) st.textContent = Object.keys(data).filter((k) => data[k].n >= 3).length + " aliment(s) avec au moins 3 relevés sur " + todo.length + (fail ? " (" + fail + " échec(s) réseau)" : "") + ".";
+  }
+
+  function viewSport() {
+    const b = state.body, r = b.rhythm, wi = state.ui.sportWeek === 1 ? 1 : 0, av = r.weeks[wi];
+    const goalFor = { goal: b.goal };
+    host.innerHTML = '<p class="muted">Indique le temps réel dont tu disposes chaque jour pour t\'entraîner. Le programme s\'adapte : séances espacées, durée qui tient dans ton créneau, matériel disponible.</p>' +
+      segHtml([["0", "Semaine A (entreprise)"], ["1", "Semaine B (école)"]], String(wi), "data-wk") +
+      '<div class="card"><h2>Temps dispo par jour</h2><div class="days" id="days">' + GL.DAYS.map((d, i) =>
+        '<button data-day="' + i + '" aria-label="' + GL.DAYS_LONG[i] + '"><span>' + d + "</span><b>" + (av[i] ? av[i] + "'" : "–") + "</b></button>").join("") + '</div><p class="muted">Touche un jour pour changer (– = pas dispo). Si ton rythme alterne, remplis la semaine B.</p>' +
+      '<label class="field"><span>Matériel</span><select id="eq">' + optList(GL.EQUIP, r.equip) + '</select></label>' +
+      '<label class="field"><span>Niveau</span><select id="lv">' + optList(GL.LEVELS, r.level) + '</select></label>' +
+      '<div class="grid2"><label class="field"><span>Sommeil (h par nuit)</span><input type="number" inputmode="decimal" step="0.5" id="sl" value="' + r.sleep + '"></label>' +
+      '<label class="field"><span>Séances visées</span><input type="number" inputmode="numeric" id="ns" value="' + b.sessions + '"></label></div></div><div id="planout"></div>' +
+      '<div class="card"><h2>Repères</h2><ul class="list">' + GL.TRAINING_RULES.map((x) => '<li><span class="n">' + esc(x) + "</span></li>").join("") + "</ul></div>" +
+      '<p class="muted">Programme générique, pas un avis médical ni un coaching personnalisé. Apprends la technique des mouvements de base avant d\'augmenter les charges.</p>';
+    void goalFor;
+    host.querySelector(".seg").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-wk]");
+      if (!btn) return;
+      state.ui.sportWeek = +btn.dataset.wk; save(); viewSport();
+    });
+    $("#days").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-day]");
+      if (!btn) return;
+      const i = +btn.dataset.day, k = GL.AVAIL_STEPS.indexOf(av[i]);
+      av[i] = GL.AVAIL_STEPS[(k + 1) % GL.AVAIL_STEPS.length];
+      btn.querySelector("b").textContent = av[i] ? av[i] + "'" : "–";
+      save(); updatePlanOut();
+    });
+    $("#eq").addEventListener("change", (e) => { r.equip = e.target.value; save(); updatePlanOut(); });
+    $("#lv").addEventListener("change", (e) => { r.level = e.target.value; save(); updatePlanOut(); });
+    $("#sl").addEventListener("input", (e) => { r.sleep = Math.min(Math.max(num(e.target.value), 0), 14); save(); updatePlanOut(); });
+    $("#ns").addEventListener("input", (e) => { b.sessions = Math.min(Math.max(Math.round(num(e.target.value)), 1), 5); save(); updatePlanOut(); });
+    updatePlanOut();
+  }
+  function updatePlanOut() {
+    const b = state.body, r = b.rhythm, wi = state.ui.sportWeek === 1 ? 1 : 0;
+    const plan = GL.planWeek(r.weeks[wi], { sessions: b.sessions, equip: r.equip, level: r.level, sleep: r.sleep, goal: b.goal });
+    $("#planout").innerHTML = '<div class="card hero"><div class="lbl">Ta semaine</div><div class="big">' + plan.sessions + " séance" + (plan.sessions > 1 ? "s" : "") + '</div><div class="row"><div><span class="lbl">Force</span><b>' + plan.strengthMin + ' min</b></div><div><span class="lbl">Cardio</span><b>' + plan.cardioMin + ' min</b></div></div></div>' +
+      plan.days.map((d) => {
+        const head = '<h2>' + GL.DAYS_LONG[d.day] + " · " + esc(d.title) + (d.minutes ? " · " + d.minutes + " min" : "") + "</h2>";
+        if (d.kind === "repos") return '<div class="card" style="opacity:.7">' + head + "</div>";
+        return '<div class="card">' + head + '<ul class="list">' + d.exercises.map((e) => '<li><span class="n">' + esc(e.name) + '</span><span class="p">' + esc(e.scheme) + "</span></li>").join("") + "</ul></div>";
+      }).join("") + plan.notes.map((n) => '<p class="warn">' + esc(n) + "</p>").join("") +
+      '<p class="muted">Progression : quand tu réussis toutes les séries au haut de la fourchette, ajoute 2,5 kg ou 1 à 2 répétitions. Échauffement de 5 minutes inclus dans la durée.</p>';
+  }
+
+  /* ---------------- Coupe de cheveux (onglet Style) ---------------- */
+  const MP_BASE = (typeof window !== "undefined" && window.GL_MP_BASE) || "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/";
+  let fmPromise = null;
+  function loadFaceMesh() {
+    if (fmPromise) return fmPromise;
+    fmPromise = new Promise((resolve, reject) => {
+      const sc = document.createElement("script");
+      sc.src = MP_BASE + "face_mesh.js"; sc.crossOrigin = "anonymous";
+      sc.onload = async () => {
+        try {
+          const fm = new window.FaceMesh({ locateFile: (f) => MP_BASE + f });
+          fm.setOptions({ maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.5 });
+          await fm.initialize();
+          resolve(fm);
+        } catch (e) { reject(e); }
+      };
+      sc.onerror = () => reject(new Error("la bibliothèque de détection n'a pas pu être chargée (internet requis)"));
+      document.head.appendChild(sc);
+    });
+    fmPromise.catch(() => { fmPromise = null; });
+    return fmPromise;
+  }
+  async function detectFace(canvas) {
+    const fm = await loadFaceMesh();
+    return new Promise((resolve, reject) => {
+      fm.onResults(resolve);
+      fm.send({ image: canvas }).catch(reject);
+    });
+  }
+  function loadImage(file) {
+    return new Promise((resolve, reject) => {
+      const u = URL.createObjectURL(file), im = new Image();
+      im.onload = () => { URL.revokeObjectURL(u); resolve(im); };
+      im.onerror = () => { URL.revokeObjectURL(u); reject(new Error("image illisible")); };
+      im.src = u;
+    });
+  }
+  function withTimeout(p, ms) {
+    return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("délai dépassé")), ms))]);
+  }
+
+  function viewCut() {
+    const l = state.look;
+    host.innerHTML = '<div class="card"><h2>Scanner mon visage</h2><p class="muted">Selfie de face, cheveux dégagés du front, bonne lumière, expression neutre. La photo est analysée sur ton téléphone et n\'est ni envoyée ni enregistrée. Le premier scan télécharge le modèle de détection (internet requis, quelques Mo).</p>' +
+      '<label class="btn" style="display:block;text-align:center;cursor:pointer">Prendre ou choisir un selfie<input type="file" accept="image/*" id="scan" hidden></label>' +
+      '<canvas id="scanc" hidden style="width:100%;height:auto;border-radius:12px;margin-top:10px"></canvas><p class="muted" id="scanst"></p></div>' +
+      '<div class="card"><h2>Forme de ton visage</h2><div class="chips wrap" id="shapes">' + Object.keys(GL.FACE_SHAPES).map((k) =>
+      '<button class="chip" data-shape="' + k + '" aria-pressed="' + (l.shape === k) + '">' + esc(GL.FACE_SHAPES[k].label) + "</button>").join("") + "</div>" +
+      '<details><summary>Je ne sais pas : je mesure</summary><p class="muted">Devant un miroir, avec une règle ou un mètre ruban souple, en cm.</p>' +
+      '<div class="grid2"><label class="field"><span>Hauteur (racine des cheveux au menton)</span><input type="number" inputmode="decimal" step="0.1" data-m="L" value="' + esc(l.L) + '"></label>' +
+      '<label class="field"><span>Front (entre les tempes)</span><input type="number" inputmode="decimal" step="0.1" data-m="F" value="' + esc(l.F) + '"></label>' +
+      '<label class="field"><span>Pommettes (largeur max)</span><input type="number" inputmode="decimal" step="0.1" data-m="C" value="' + esc(l.C) + '"></label>' +
+      '<label class="field"><span>Mâchoire (aux angles)</span><input type="number" inputmode="decimal" step="0.1" data-m="J" value="' + esc(l.J) + '"></label></div><p class="muted" id="mres"></p></details></div>' +
+      '<div class="card"><h2>Tes cheveux</h2>' + segHtml(Object.entries(GL.HAIR_TYPES), l.hairType, "data-ht") +
+      segHtml(Object.entries(GL.HAIR_DENSITY), l.density, "data-hd") + segHtml(Object.entries(GL.HAIR_LENGTHS), l.length, "data-hl") + '</div><div id="cutout"></div>';
+    const upd = () => { save(); updateCutOut(); };
+    const syncShapeUI = () => {
+      host.querySelectorAll("button[data-shape]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.shape === l.shape));
+      ["L", "F", "C", "J"].forEach((k) => { const i = host.querySelector('input[data-m="' + k + '"]'); if (i) i.value = l[k]; });
+    };
+    $("#scan").addEventListener("change", async (e) => {
+      const file = e.target.files[0], st = $("#scanst"), cv = $("#scanc");
+      if (!file) return;
+      st.textContent = "Analyse en cours… (au premier scan, le chargement du modèle peut prendre quelques secondes)";
+      try {
+        const img = await loadImage(file);
+        const sc = Math.min(1, 640 / Math.max(img.naturalWidth, img.naturalHeight));
+        cv.width = Math.round(img.naturalWidth * sc); cv.height = Math.round(img.naturalHeight * sc);
+        const ctx = cv.getContext("2d"); ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        const res = await withTimeout(detectFace(cv), 90000);
+        const lm = res && res.multiFaceLandmarks && res.multiFaceLandmarks[0];
+        if (!lm) { cv.hidden = false; st.textContent = "Aucun visage détecté. Reprends un selfie de face, mieux éclairé, ou choisis ta forme à la main."; return; }
+        const m = GL.measuresFromLandmarks(lm, cv.width, cv.height);
+        ctx.fillStyle = "#ee8a66";
+        Object.keys(GL.FACE_PTS).forEach((k) => { ctx.beginPath(); ctx.arc(lm[GL.FACE_PTS[k]].x * cv.width, lm[GL.FACE_PTS[k]].y * cv.height, 4, 0, 6.3); ctx.fill(); });
+        cv.hidden = false;
+        if (!m || !m.frontal) { st.textContent = "Le visage n'est pas assez de face (tête tournée). Refais un selfie bien droit."; return; }
+        l.L = m.L; l.F = m.F; l.C = m.C; l.J = m.J; l.shape = GL.faceShape(m);
+        syncShapeUI(); upd();
+        st.textContent = "Forme estimée : " + GL.FACE_SHAPES[l.shape].label.toLowerCase() + ". C'est une estimation : vérifie les points orange sur la photo et corrige la forme ci-dessous si besoin.";
+      } catch (err) { st.textContent = "Scan impossible : " + (err && err.message ? err.message : "erreur inconnue") + ". Tu peux choisir ta forme à la main."; }
+    });
+    $("#shapes").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-shape]");
+      if (!b) return;
+      l.shape = b.dataset.shape;
+      host.querySelectorAll("button[data-shape]").forEach((x) => x.setAttribute("aria-pressed", x === b));
+      upd();
+    });
+    host.querySelectorAll("input[data-m]").forEach((inp) => inp.addEventListener("input", () => {
+      l[inp.dataset.m] = inp.value;
+      const k = GL.faceShape(l), r = $("#mres");
+      if (k) {
+        l.shape = k; r.textContent = "Résultat : visage " + GL.FACE_SHAPES[k].label.toLowerCase() + ".";
+        host.querySelectorAll("button[data-shape]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.shape === k));
+      } else r.textContent = "Remplis les 4 mesures.";
+      upd();
+    }));
+    [["data-ht", "hairType"], ["data-hd", "density"], ["data-hl", "length"]].forEach(([attr, key]) => {
+      const segs = [...host.querySelectorAll(".seg")].filter((s) => s.querySelector("[" + attr + "]"));
+      segs.forEach((seg) => seg.addEventListener("click", (e) => {
+        const b = e.target.closest("button[" + attr + "]");
+        if (!b) return;
+        l[key] = b.getAttribute(attr);
+        seg.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+        upd();
+      }));
+    });
+    updateCutOut();
+  }
+  function updateCutOut() {
+    const l = state.look, out = $("#cutout");
+    if (!l.shape || !GL.FACE_SHAPES[l.shape]) { out.innerHTML = '<div class="card"><p class="muted">Choisis ta forme de visage pour voir les coupes adaptées.</p></div>'; return; }
+    const fsh = GL.FACE_SHAPES[l.shape], cuts = GL.recommendCuts(l.shape, l.hairType, l.length, l.density), notes = GL.hairNotes(l.hairType, l.density);
+    out.innerHTML = '<div class="card"><h2>Visage ' + esc(fsh.label.toLowerCase()) + '</h2><dl class="kv"><dt>Repère</dt><dd>' + esc(fsh.desc) + "</dd><dt>Objectif</dt><dd>" + esc(fsh.goal) + "</dd><dt>À éviter</dt><dd>" + esc(fsh.avoid) + "</dd><dt>Barbe</dt><dd>" + esc(fsh.beard) + "</dd></dl></div>" +
+      '<div class="card"><h2>Coupes qui te vont</h2>' + (cuts.length ? '<ul class="list">' + cuts.map((c) => {
+        const k = GL.cutLinks(c);
+        return '<li><span class="n">' + esc(c.name) + "<small>À dire au coiffeur : " + esc(c.how) + '</small></span><span class="p"><a class="lk" href="' + esc(k.images) + '" target="_blank" rel="noopener noreferrer">Photos ›</a><br><a class="lk" href="' + esc(k.pinterest) + '" target="_blank" rel="noopener noreferrer">Pinterest ›</a></span></li>';
+      }).join("") + "</ul>" : '<p class="muted">Aucune coupe ne correspond à ces critères, essaie « Peu importe » pour la longueur.</p>') +
+      notes.map((n) => '<p class="muted">' + esc(n) + "</p>").join("") + "</div>" +
+      '<p class="muted">Ce sont des règles de style courantes, pas une science exacte : tes cheveux, ton style et ton métier comptent autant. Montre des photos à ton coiffeur et demande son avis.</p>';
   }
 
   /* ---------------- Moi ---------------- */
@@ -573,6 +1031,18 @@
   }
 
   /* ---------------- Démarrage ---------------- */
+  function runInterest() {
+    const added = GL.applyAllInterest(state.accounts, GL.todayISO());
+    if (!added.length) return;
+    state.ui.interestNote = added.map((x) => x.name + " : +" + x.amount.toFixed(2).replace(".", ",") + " € (" + x.date.split("-").reverse().join("/") + ")").join(" · ");
+    save();
+  }
+  runInterest();
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { const before = state.ui.interestNote; runInterest(); if (state.ui.interestNote !== before && (state.ui.tab === "home" || state.ui.tab === "accounts")) go(state.ui.tab); } });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("[data-dismiss-int]")) return;
+    state.ui.interestNote = ""; save(); go(state.ui.tab);
+  });
   go(state.ui.tab);
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => { /* hors-ligne indisponible */ }));
