@@ -231,9 +231,9 @@
   function parseDate(s) {
     s = String(s).trim();
     let m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
-    if (m) return { y: +m[3], mo: +m[2] };
+    if (m) return { y: +m[3], mo: +m[2], d: +m[1] };
     m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (m) return { y: +m[1], mo: +m[2] };
+    if (m) return { y: +m[1], mo: +m[2], d: +m[3] };
     return null;
   }
   function findCol(header, keys) {
@@ -282,7 +282,199 @@
     return { count: tx.length, months: [...months].sort(), avg, spend };
   }
 
+  /* ---- Comptes : suivi manuel ou par export CSV, aucun identifiant bancaire ---- */
+  const LIVRET_CAP = 22950;
+  const PEA_CAP = 150000;
+  const pad2 = (n) => String(n).padStart(2, "0");
+  function todayISO() {
+    const d = new Date();
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+  function defaultAccounts() {
+    return [
+      { id: "pea", name: "PEA Trade Republic", type: "pea", balance: 0, contributed: 0, rate: 0, openDate: "", history: [] },
+      { id: "livret", name: "Livret A Boursorama", type: "livret", balance: 0, contributed: 0, rate: 1.5, openDate: "", history: [] },
+    ];
+  }
+  function newAccount(type) {
+    const names = { pea: "Nouveau PEA", livret: "Nouveau livret", other: "Autre compte" };
+    return { id: "a" + Date.now() + Math.floor(Math.random() * 1000), name: names[type] || "Compte", type,
+      balance: 0, contributed: 0, rate: type === "livret" ? 1.5 : 0, openDate: "", history: [] };
+  }
+  function addSnapshot(acc, date, balance) {
+    acc.history = (acc.history || []).filter((h) => h.date !== date);
+    acc.history.push({ date, balance });
+    acc.history.sort((a, b) => (a.date < b.date ? -1 : 1));
+    acc.balance = acc.history[acc.history.length - 1].balance;
+  }
+  function totalWorth(accounts) { return accounts.reduce((s, a) => s + (+a.balance || 0), 0); }
+  function netWorthSeries(accounts) {
+    const dates = [...new Set(accounts.flatMap((a) => (a.history || []).map((h) => h.date)))].sort();
+    return dates.map((d) => ({
+      date: d,
+      total: accounts.reduce((s, a) => {
+        let v = 0;
+        for (const h of a.history || []) if (h.date <= d) v = h.balance;
+        return s + v;
+      }, 0),
+    }));
+  }
+  function yearsSince(iso) {
+    const d = new Date(iso + "T00:00:00");
+    return isNaN(d) ? null : (Date.now() - d.getTime()) / (365.25 * 864e5);
+  }
+  function peaStats(a) {
+    const gain = a.balance - a.contributed;
+    return {
+      gain, pct: a.contributed > 0 ? gain / a.contributed : null,
+      capUsed: a.contributed / PEA_CAP, years: a.openDate ? yearsSince(a.openDate) : null,
+    };
+  }
+  function livretStats(a) {
+    return { interest: (a.balance * a.rate) / 100, capUsed: a.balance / LIVRET_CAP };
+  }
+  // Lit un export CSV de compte (Boursorama, Trade Republic, etc.) : détecte au mieux le solde et les versements.
+  function importAccountCSV(text) {
+    const rows = parseCSV(text);
+    if (rows.length < 2) throw new Error("Fichier vide ou illisible.");
+    const h = rows[0];
+    const d = findCol(h, ["date"]);
+    const a = findCol(h, ["montant", "amount", "valeur", "value"]);
+    const l = findCol(h, ["libell", "label", "description", "intitul", "détail", "detail", "note"]);
+    const t = findCol(h, ["type"]);
+    const b = findCol(h, ["accountbalance", "solde", "balance"]);
+    if (d < 0 || a < 0) throw new Error("Colonnes introuvables : il faut au moins une date et un montant.");
+    const dep = /versement|d[ée]p[oô]t|deposit|virement entrant|inbound|transfer in|alimentation|cash in/i;
+    const wd = /retrait|withdraw|virement sortant|outbound|cash out/i;
+    let deposits = 0, withdrawals = 0, seen = false, n = 0, best = null;
+    for (const r of rows.slice(1)) {
+      const dt = parseDate(r[d] || "");
+      if (!dt) continue;
+      n++;
+      const amt = toNumber(r[a]);
+      const txt = (l >= 0 ? r[l] || "" : "") + " " + (t >= 0 ? r[t] || "" : "");
+      if (dep.test(txt) && amt > 0) { deposits += amt; seen = true; }
+      else if (wd.test(txt)) { withdrawals += Math.abs(amt); seen = true; }
+      if (b >= 0 && String(r[b] || "").trim() !== "") {
+        const s = dt.y * 10000 + dt.mo * 100 + (dt.d || 1);
+        if (!best || s > best.s) best = { s, bal: toNumber(r[b]), dt }; // égalité : on garde la 1re ligne (export du plus récent au plus ancien)
+      }
+    }
+    return {
+      count: n,
+      balance: best ? best.bal : null,
+      balanceDate: best ? best.dt.y + "-" + pad2(best.dt.mo) + "-" + pad2(best.dt.d || 1) : null,
+      depositsNet: seen ? deposits - withdrawals : null,
+    };
+  }
+
+  /* ---- Marques par pièce et par gamme (suggestions, sans partenariat) ---- */
+  const CAT_BRANDS = {
+    haut: { low: ["Uniqlo", "H&M", "Kiabi", "Vinted"], mid: ["Uniqlo", "COS", "Arket", "Lacoste"], high: ["Polo Ralph Lauren", "Sandro", "Hugo Boss"] },
+    bas: { low: ["Uniqlo", "Kiabi", "Zara", "Vinted"], mid: ["Levi's", "Dockers", "Mango", "COS"], high: ["Hugo Boss", "Massimo Dutti", "Sandro"] },
+    veste: { low: ["Zara", "H&M", "Vinted"], mid: ["Mango", "Massimo Dutti", "Uniqlo"], high: ["Suitsupply", "Hugo Boss", "Sandro"] },
+    costume: { low: ["Celio", "Jules", "Zara"], mid: ["Suitsupply", "Massimo Dutti"], high: ["Hugo Boss", "Zegna"] },
+    chaussures: { low: ["Zara", "Celio", "Vinted"], mid: ["Clarks", "Geox", "Dr. Martens"], high: ["Church's", "Grenson", "Carmina"] },
+    accessoire: { low: ["Uniqlo", "H&M", "Vinted"], mid: ["Lacoste", "Levi's"], high: ["Hugo Boss", "Polo Ralph Lauren"] },
+  };
+  const STREET_BRANDS = {
+    haut: { low: ["Uniqlo", "H&M", "Kiabi"], mid: ["Carhartt WIP", "Nike", "Adidas", "Levi's"], high: ["Stüssy", "Carhartt WIP"] },
+    bas: { low: ["Kiabi", "Zara", "Vinted"], mid: ["Dickies", "Carhartt WIP", "Levi's"], high: ["Stüssy", "Carhartt WIP"] },
+    veste: { low: ["Zara", "H&M", "Vinted"], mid: ["Carhartt WIP", "Nike", "Adidas", "Levi's"], high: ["Stüssy", "The North Face"] },
+    chaussures: { low: ["Vinted", "Adidas (soldes)", "Nike (soldes)"], mid: ["New Balance", "Adidas Originals", "Nike", "Veja"], high: ["Common Projects", "Autry", "Salomon"] },
+    accessoire: { low: ["Vinted", "H&M"], mid: ["Carhartt WIP", "Nike"], high: ["Stüssy"] },
+  };
+  const ITEM_BRANDS = {
+    "Montre sobre": { low: ["Casio", "Timex"], mid: ["Seiko", "Orient", "Tissot"], high: ["Tissot", "Longines", "Nomos"] },
+    "Sacoche ou sac en cuir": { low: ["Zara", "H&M"], mid: ["Lacoste", "Fossil"], high: ["Le Tanneur", "Longchamp"] },
+    "Ceinture en cuir": { low: ["Zara", "Celio"], mid: ["Levi's", "Lacoste", "Dockers"], high: ["Hugo Boss", "Ferragamo"] },
+    "Cravate unie": { low: ["Celio", "Jules"], mid: ["Suitsupply", "Jules"], high: ["Hugo Boss", "Hermès"] },
+    "Chaussettes (x7)": { low: ["Uniqlo", "Kiabi", "Decathlon"], mid: ["Falke", "Happy Socks"], high: ["Falke"] },
+    "T-shirts basiques (x5)": { low: ["Uniqlo", "H&M", "Kiabi"], mid: ["Uniqlo U", "COS", "Armor Lux"], high: ["Sunspel", "Norse Projects"] },
+    "Jean brut sombre": { low: ["Zara", "Kiabi"], mid: ["Levi's 501", "Lee", "Uniqlo"], high: ["A.P.C.", "Nudie", "Edwin"] },
+    "Manteau en laine": { low: ["Zara", "Mango", "H&M"], mid: ["Uniqlo", "Massimo Dutti", "Mango"], high: ["Suitsupply", "Sandro", "Max Mara"] },
+    "Baskets blanches en cuir": { low: ["Adidas (soldes)", "Vinted"], mid: ["Veja", "Adidas Stan Smith", "New Balance"], high: ["Common Projects", "Axel Arigato"] },
+    "Derbies en cuir": { low: ["Zara", "Celio", "Vinted"], mid: ["Clarks", "Geox"], high: ["Church's", "Grenson", "Carmina"] },
+    "Casquette ou bonnet": { low: ["H&M", "Vinted"], mid: ["Carhartt WIP", "New Era"], high: ["Stüssy"] },
+  };
+  function brandsFor(piece, category, tier, style) {
+    const byItem = ITEM_BRANDS[piece];
+    if (byItem && byItem[tier]) return byItem[tier];
+    if (style === "streetwear" && STREET_BRANDS[category] && STREET_BRANDS[category][tier]) return STREET_BRANDS[category][tier];
+    return (CAT_BRANDS[category] && CAT_BRANDS[category][tier]) || [];
+  }
+
+  /* ---- Emploi : liens de recherche et employeurs cibles ---- */
+  const JOB_TYPES = { alternance: "Alternance", cdi: "CDI junior", stage: "Stage" };
+  const CITIES = { paris: "Paris", versailles: "Versailles", lille: "Lille", luxembourg: "Luxembourg", zurich: "Zurich", remote: "Télétravail" };
+  const REGION_OF_CITY = { paris: "paris", versailles: "paris", remote: "paris", lille: "lille", luxembourg: "lu", zurich: "ch" };
+  function jobQuery(q, type) {
+    const w = type === "alternance" ? "alternance" : type === "stage" ? "stage" : "junior";
+    return ((q || "") + " " + w).trim();
+  }
+  function jobLinks(city, q, type) {
+    const e = encodeURIComponent, qq = jobQuery(q, type), loc = CITIES[city] || "";
+    const links = [["LinkedIn", "https://www.linkedin.com/jobs/search/?keywords=" + e(qq) + "&location=" + e(city === "remote" ? "France" : loc)]];
+    if (city === "luxembourg") {
+      links.push(["Indeed Luxembourg", "https://lu.indeed.com/jobs?q=" + e(qq) + "&l=Luxembourg"]);
+    } else if (city === "zurich") {
+      links.push(["jobs.ch", "https://www.jobs.ch/en/vacancies/?term=" + e(qq) + "&location=" + e(loc)],
+        ["Indeed Suisse", "https://ch.indeed.com/jobs?q=" + e(qq) + "&l=" + e(loc)]);
+    } else if (city === "remote") {
+      links.push(["Welcome to the Jungle", "https://www.welcometothejungle.com/fr/jobs?query=" + e(qq + " télétravail")],
+        ["Indeed", "https://fr.indeed.com/jobs?q=" + e(qq + " télétravail")]);
+    } else {
+      links.push(["Indeed", "https://fr.indeed.com/jobs?q=" + e(qq) + "&l=" + e(loc)],
+        ["Welcome to the Jungle", "https://www.welcometothejungle.com/fr/jobs?query=" + e(qq)],
+        ["HelloWork", "https://www.hellowork.com/fr-fr/emploi/recherche.html?k=" + e(qq) + "&l=" + e(loc)],
+        ["France Travail", "https://candidat.francetravail.fr/offres/recherche?motsCles=" + e(qq)],
+        ["Apec", "https://www.apec.fr/candidat/recherche-emploi.html/emploi?motsCles=" + e(qq)]);
+      if (type !== "cdi") links.push(["La bonne alternance", "https://labonnealternance.apprentissage.beta.gouv.fr/"]);
+    }
+    return links.map(([name, url]) => ({ name, url }));
+  }
+  const REGION_LABELS = { paris: "Paris et Île-de-France", lille: "Lille", lu: "Luxembourg", ch: "Suisse (Zurich)" };
+  const EMPLOYERS = [
+    ["paris", "BNP Paribas", "Banque"], ["paris", "Société Générale", "Banque"], ["paris", "Crédit Agricole CIB", "Banque"],
+    ["paris", "Natixis", "Banque"], ["paris", "BPCE", "Banque"], ["paris", "Boursorama", "Banque en ligne"],
+    ["paris", "Qonto", "Fintech"], ["paris", "Pennylane", "Fintech"], ["paris", "Swile", "Fintech"],
+    ["paris", "Spendesk", "Fintech"], ["paris", "Alan", "Insurtech"], ["paris", "Worldline", "Paiement"], ["paris", "Ledger", "Crypto, sécurité"],
+    ["lille", "Oney", "Crédit, fintech"], ["lille", "Crédit Agricole Nord de France", "Banque"],
+    ["lille", "Crédit Mutuel Nord Europe", "Banque"], ["lille", "CIC Nord Ouest", "Banque"],
+    ["lu", "BGL BNP Paribas", "Banque"], ["lu", "Spuerkeess", "Banque"], ["lu", "Banque de Luxembourg", "Banque privée"],
+    ["lu", "ING Luxembourg", "Banque"], ["lu", "Clearstream", "Post-marché"], ["lu", "PayPal Europe", "Paiement"],
+    ["ch", "UBS", "Banque"], ["ch", "Zürcher Kantonalbank", "Banque"], ["ch", "Julius Baer", "Banque privée"],
+    ["ch", "Swiss Re", "Réassurance"], ["ch", "Zurich Insurance Group", "Assurance"], ["ch", "Avaloq", "Logiciel bancaire"],
+    ["ch", "SIX", "Infrastructure financière"], ["ch", "Sygnum", "Banque digitale"],
+  ].map((r) => ({ region: r[0], name: r[1], sector: r[2] }));
+  function employerLink(name, q) {
+    return "https://www.linkedin.com/jobs/search/?keywords=" + encodeURIComponent(name + " " + (q || ""));
+  }
+
+  /* ---- Conseils budget (règles simples, pas de conseil de placement) ---- */
+  function insights(p, accounts) {
+    const b = budget(p), out = [];
+    if (!isNaN(b.effort) && b.effort > 0.33)
+      out.push({ tone: "warn", text: "Ton loyer pèse " + Math.round(b.effort * 100) + " % de ton revenu : c'est le premier poste à optimiser (aides, colocation, négociation)." });
+    const liquid = accounts.filter((a) => a.type === "livret" || a.type === "cash").reduce((s, a) => s + (+a.balance || 0), 0);
+    if (b.emergency > 0 && accounts.some((a) => a.balance > 0)) {
+      const cov = liquid / b.emergency;
+      out.push(cov >= 1 ? { tone: "ok", text: "Fonds de secours couvert (" + Math.round(cov * 100) + " % de 3 mois de charges)." }
+        : { tone: "warn", text: "Fonds de secours à " + Math.round(cov * 100) + " % : il manque " + eur(b.emergency - liquid) + " sur tes comptes disponibles." });
+    }
+    accounts.forEach((a) => {
+      if (a.type === "livret" && a.balance >= 0.9 * LIVRET_CAP) out.push({ tone: "info", text: a.name + " approche du plafond de " + eur(LIVRET_CAP) + "." });
+    });
+    const nb = nextBand(p.income, nationalBands(p.median));
+    if (nb) out.push({ tone: "info", text: "Il te manque " + eur(nb.gap) + " par mois pour atteindre « " + nb.name + " » dans la pyramide française." });
+    if (!accounts.some((a) => a.balance > 0)) out.push({ tone: "info", text: "Renseigne tes soldes dans l'onglet Comptes pour suivre ton patrimoine." });
+    return out.slice(0, 4);
+  }
+
   return {
+    LIVRET_CAP, PEA_CAP, todayISO, defaultAccounts, newAccount, addSnapshot, totalWorth, netWorthSeries,
+    peaStats, livretStats, importAccountCSV, brandsFor, JOB_TYPES, CITIES, REGION_OF_CITY, REGION_LABELS,
+    EMPLOYERS, jobLinks, jobQuery, employerLink, insights,
     MEDIAN, STYLES, STYLE_LABELS, TIERS, TIER_LABELS, CATALOG, DEFAULT_PROFILE, HOURS_WARNING,
     STUDENT, nationalBands, bandFor, bandIndex, nextBand, fmtBand, eur, nf,
     budget, netGain, combine, project, monthsToTarget, planWardrobe, importBank, parseCSV,

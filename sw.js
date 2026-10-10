@@ -1,6 +1,6 @@
 /* Service worker : met l'app en cache pour qu'elle marche hors-ligne.
    Incrémente VERSION à chaque mise à jour des fichiers. */
-const VERSION = "grindlab-v1";
+const VERSION = "grindlab-v2";
 const SHELL = [
   "./", "./index.html", "./styles.css", "./logic.js", "./app.js",
   "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png",
@@ -8,7 +8,12 @@ const SHELL = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // On met en cache fichier par fichier : un fichier absent (ex. une icône) ne bloque pas l'installation.
+  e.waitUntil(
+    caches.open(VERSION)
+      .then((c) => Promise.all(SHELL.map((u) => c.add(u).catch(() => null))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (e) => {

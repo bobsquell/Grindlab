@@ -112,3 +112,18 @@ svg.chart { width: 100%; height: auto; display: block; }
 .tabs svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .tabs button[aria-current="page"] { color: var(--accent); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---- v2 : comptes, emploi, marques ---- */
+.acc .head { display: flex; align-items: center; gap: 10px; }
+.acc .head input[type=text] { flex: 1; min-height: 44px; }
+.chips.wrap { flex-wrap: wrap; }
+button.chip { font: inherit; min-height: 44px; padding: 8px 14px; color: var(--text); }
+button.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+a.lk { color: var(--accent); text-decoration: none; font-weight: 600; white-space: nowrap; }
+a.btn { display: block; text-align: center; text-decoration: none; }
+.linkgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.linkgrid a.btn { margin-top: 0; padding: 11px 8px; font-size: 14px; }
+.t-warn .n { color: var(--warn); }
+.t-ok .n { color: var(--accent); }
+.brands { color: var(--accent); font-size: 12px; }
+.sep { margin: 4px 0 0; }
