@@ -784,8 +784,8 @@
           let real = "";
           if (!r) real = '<small class="muted">Prix estimé (pas assez de relevés)</small>';
           else {
-            const chains = Object.keys(r.byChain).map((k) => [k, r.byChain[k]]).sort((x, y) => x[1].median - y[1].median);
-            real = '<small class="brands">Relevé : ' + r.median.toFixed(2).replace(".", ",") + " €/kg (" + r.n + " relevés " + (r.scope === "local" ? "près de " + esc(b.city) : "en France") + ")" + (chains.length ? " · le moins cher : " + esc(chains[0][0]) + " " + chains[0][1].median.toFixed(2).replace(".", ",") + " €/kg" : "") + "</small>";
+            const chains = Object.keys(r.byChain).map((k) => [k, r.byChain[k]]).filter((c) => c[1].n >= 3 && !c[1].bio).sort((x, y) => x[1].median - y[1].median);
+            real = '<small class="brands">Relevé : ' + r.median.toFixed(2).replace(".", ",") + " €/kg (" + r.n + " relevés " + (r.scope === "local" ? "près de " + esc(b.city) : "en France") + ")" + (chains.length >= 2 ? " · le moins cher parmi les enseignes avec 3 relevés ou plus : " + esc(chains[0][0]) + " " + chains[0][1].median.toFixed(2).replace(".", ",") + " €/kg (" + chains[0][1].n + " relevés), à comparer dans ton magasin" : "") + "</small>";
           }
           const links = GL.foodSearchLinks(f.name.replace(/\(.*?\)/g, "").trim()).map((l) => '<a class="btn alt" href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">' + esc(l.name) + "</a>").join("");
           return '<li><details style="flex:1"><summary style="display:flex;justify-content:space-between;gap:10px;color:var(--text);font-size:16px"><span>' + esc(f.name) + '</span><span class="p">' + (g >= 1000 ? (g / 1000).toFixed(1).replace(".", ",") + " kg" : Math.round(g) + " g") + ' <small class="muted">~' + eur((g / 1000) * ppk) + "</small></span></summary>" +
