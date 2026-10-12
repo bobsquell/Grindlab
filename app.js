@@ -747,7 +747,7 @@
   }
 
   function updatePlateOut() {
-    const b = state.body, t = GL.calorieTarget(b), m = GL.macroTargets(b, t.kcal), tot = GL.basketTotals(b.basket), d = tot.day;
+    const b = state.body, t = GL.calorieTarget(b), m = GL.macroTargets(b, t.kcal), tot = GL.basketTotals(b.basket, pricesOverride()), d = tot.day;
     const row = (label, v, target, unit, goodHigh) => {
       const pct = target > 0 ? Math.min(100, (v / target) * 100) : 0;
       return '<li><span class="n">' + label + '<div class="bar"><i style="width:' + pct.toFixed(0) + '%"></i></div></span><span class="p">' + GL.nf(v) + " / " + GL.nf(target) + " " + unit + "</span></li>";
@@ -782,9 +782,10 @@
           const g = b.basket[f.id], r = realPrice(f), ppk = r ? r.median : f.price;
           total += (g / 1000) * ppk;
           let real = "";
-          if (r) {
+          if (!r) real = '<small class="muted">Prix estimé (pas assez de relevés)</small>';
+          else {
             const chains = Object.keys(r.byChain).map((k) => [k, r.byChain[k]]).sort((x, y) => x[1].median - y[1].median);
-            real = '<small class="brands">Relevé : ' + r.median.toFixed(2).replace(".", ",") + " €/kg (" + r.n + " relevés)" + (chains.length ? " · le moins cher : " + esc(chains[0][0]) + " " + chains[0][1].median.toFixed(2).replace(".", ",") + " €/kg" : "") + "</small>";
+            real = '<small class="brands">Relevé : ' + r.median.toFixed(2).replace(".", ",") + " €/kg (" + r.n + " relevés " + (r.scope === "local" ? "près de " + esc(b.city) : "en France") + ")" + (chains.length ? " · le moins cher : " + esc(chains[0][0]) + " " + chains[0][1].median.toFixed(2).replace(".", ",") + " €/kg" : "") + "</small>";
           }
           const links = GL.foodSearchLinks(f.name.replace(/\(.*?\)/g, "").trim()).map((l) => '<a class="btn alt" href="' + esc(l.url) + '" target="_blank" rel="noopener noreferrer">' + esc(l.name) + "</a>").join("");
           return '<li><details style="flex:1"><summary style="display:flex;justify-content:space-between;gap:10px;color:var(--text);font-size:16px"><span>' + esc(f.name) + '</span><span class="p">' + (g >= 1000 ? (g / 1000).toFixed(1).replace(".", ",") + " kg" : Math.round(g) + " g") + ' <small class="muted">~' + eur((g / 1000) * ppk) + "</small></span></summary>" +
@@ -809,9 +810,20 @@
     $("#city").addEventListener("input", (e) => { b.city = e.target.value; save(); renderStores(); });
     renderStores();
     const gp = $("#getprices");
-    if (gp) gp.addEventListener("click", () => fetchRealPrices(ids, gp, $("#pstatus")));
+    if (gp) {
+      gp.addEventListener("click", () => fetchRealPrices(ids, gp, $("#pstatus")));
+      const pr = state.prices || {}, age = pr.date ? (Date.now() - Date.parse(pr.date)) / 86400000 : Infinity;
+      if (!autoPricesTried && (age > 7 || (pr.city || "") !== (b.city || ""))) { autoPricesTried = true; fetchRealPrices(ids, gp, $("#pstatus")); }
+    }
   }
 
+  let autoPricesTried = false;
+  const pricesOverride = () => {
+    const o = {};
+    const d = (state.prices && state.prices.data) || {};
+    Object.keys(d).forEach((id) => { if (d[id] && d[id].n >= 3) o[id] = d[id].median; });
+    return o;
+  };
   async function fetchJson(url, ms) {
     // Dans l'APK, on passe par le client HTTP natif de Capacitor (pas de blocage CORS).
     const cap = typeof window !== "undefined" && window.Capacitor;
@@ -839,8 +851,12 @@
     const worker = async () => {
       while (queue.length) {
         const id = queue.shift();
-        try { data[id] = GL.summarizePrices(await fetchJson(GL.openPricesUrl(id, b.city, today, 120))); }
-        catch (e) { fail++; }
+        try {
+          const local = GL.openPricesUrl(id, b.city, today, 120), wide = GL.openPricesUrl(id, b.city, today, 120, false);
+          let r = GL.summarizePrices(await fetchJson(local)), scope = local === wide ? "france" : "local";
+          if (r.n < 3 && local !== wide) { r = GL.summarizePrices(await fetchJson(wide)); scope = "france"; }
+          data[id] = Object.assign(r, { scope });
+        } catch (e) { fail++; }
         done++; status.textContent = "Recherche en cours (" + done + "/" + todo.length + ")…";
       }
     };
@@ -848,6 +864,7 @@
     btn.disabled = false;
     if (fail === todo.length) { status.textContent = "Open Prices est injoignable (hors ligne ou accès bloqué par le navigateur). Réessaie avec du réseau."; return; }
     state.prices = { date: today, city: b.city || "", data }; save();
+    if (!(state.ui.tab === "body" && state.ui.bodySub === "shop")) return;
     viewShop();
     const st = $("#pstatus");
     if (st) st.textContent = Object.keys(data).filter((k) => data[k].n >= 3).length + " aliment(s) avec au moins 3 relevés sur " + todo.length + (fail ? " (" + fail + " échec(s) réseau)" : "") + ".";

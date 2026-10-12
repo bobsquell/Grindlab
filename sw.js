@@ -1,6 +1,6 @@
 /* Service worker : met l'app en cache pour qu'elle marche hors-ligne.
    Incrémente VERSION à chaque mise à jour des fichiers. */
-const VERSION = "grindlab-v6";
+const VERSION = "grindlab-v7";
 const SHELL = [
   "./", "./index.html", "./styles.css", "./logic.js", "./app.js",
   "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png",

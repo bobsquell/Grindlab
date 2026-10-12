@@ -563,31 +563,31 @@
 
   // id, nom, catégorie, kcal, prot, gluc, lip, fibres (pour 100 g), prix indicatif €/kg, mois de saison (null = toute l'année), drapeaux
   const FOOD_ROWS = [
-    ["banane", "Banane", "fruit", 90, 1.1, 20, 0.3, 2, 1.8, null, ""],
-    ["pomme", "Pomme", "fruit", 52, 0.3, 12, 0.2, 2, 2.3, [9, 10, 11, 12, 1, 2, 3, 4], ""],
+    ["banane", "Banane", "fruit", 90, 1.1, 20, 0.3, 2, 1.6, null, ""],
+    ["pomme", "Pomme", "fruit", 52, 0.3, 12, 0.2, 2, 2.6, [9, 10, 11, 12, 1, 2, 3, 4], ""],
     ["poire", "Poire", "fruit", 55, 0.4, 12.5, 0.1, 3, 2.8, [8, 9, 10, 11, 12, 1], ""],
     ["orange", "Orange", "fruit", 45, 0.9, 9, 0.2, 2, 2.2, [11, 12, 1, 2, 3, 4], ""],
     ["clementine", "Clémentine", "fruit", 47, 0.8, 10, 0.3, 1.7, 2.8, [11, 12, 1, 2], ""],
     ["kiwi", "Kiwi", "fruit", 60, 1.1, 12, 0.5, 3, 3.5, [11, 12, 1, 2, 3, 4, 5], ""],
     ["raisin", "Raisin", "fruit", 70, 0.7, 17, 0.2, 1, 3.5, [8, 9, 10], ""],
     ["fraise", "Fraises", "fruit", 33, 0.7, 6, 0.3, 2, 6, [5, 6, 7], ""],
-    ["carotte", "Carottes", "veg", 36, 0.7, 7.5, 0.2, 3, 1.4, [1, 2, 3, 4, 5, 6, 9, 10, 11, 12], ""],
-    ["courgette", "Courgettes", "veg", 17, 1.2, 2.5, 0.3, 1.1, 2.5, [6, 7, 8, 9], ""],
-    ["tomate", "Tomates", "veg", 18, 0.9, 3.5, 0.2, 1.2, 3, [6, 7, 8, 9], ""],
-    ["poireau", "Poireaux", "veg", 31, 1.5, 5.5, 0.3, 2.5, 2.2, [9, 10, 11, 12, 1, 2, 3, 4], ""],
+    ["carotte", "Carottes", "veg", 36, 0.7, 7.5, 0.2, 3, 2, [1, 2, 3, 4, 5, 6, 9, 10, 11, 12], ""],
+    ["courgette", "Courgettes", "veg", 17, 1.2, 2.5, 0.3, 1.1, 2.4, [6, 7, 8, 9], ""],
+    ["tomate", "Tomates", "veg", 18, 0.9, 3.5, 0.2, 1.2, 3.8, [6, 7, 8, 9], ""],
+    ["poireau", "Poireaux", "veg", 31, 1.5, 5.5, 0.3, 2.5, 3, [9, 10, 11, 12, 1, 2, 3, 4], ""],
     ["chou-fleur", "Chou-fleur", "veg", 25, 2, 3, 0.3, 2.5, 2.5, [10, 11, 12, 1, 2, 3, 4], ""],
     ["brocoli", "Brocoli", "veg", 34, 2.8, 4, 0.4, 2.6, 3.5, [9, 10, 11, 12, 1, 2, 3], ""],
     ["epinards", "Épinards", "veg", 23, 2.9, 1.6, 0.4, 2.2, 4.5, [3, 4, 5, 9, 10, 11], ""],
-    ["courge", "Courge, potiron", "veg", 26, 1, 5.5, 0.1, 1.5, 1.8, [9, 10, 11, 12, 1], ""],
+    ["courge", "Courge, potiron", "veg", 26, 1, 5.5, 0.1, 1.5, 2.5, [9, 10, 11, 12, 1], ""],
     ["haricots-verts", "Haricots verts", "veg", 31, 1.8, 5, 0.2, 3, 4, [6, 7, 8, 9, 10], ""],
     ["champignons", "Champignons de Paris", "veg", 22, 3, 1, 0.3, 1.5, 4.5, null, ""],
     ["salade", "Salade verte", "veg", 15, 1.4, 1.5, 0.2, 1.3, 3, null, ""],
-    ["oignon", "Oignons", "veg", 40, 1.1, 8.5, 0.1, 1.7, 1.6, null, ""],
+    ["oignon", "Oignons", "veg", 40, 1.1, 8.5, 0.1, 1.7, 2.2, null, ""],
     ["pates-completes", "Pâtes complètes (crues)", "starch", 350, 13, 66, 2.5, 8, 2.2, null, ""],
     ["riz-complet", "Riz complet (cru)", "starch", 350, 7.5, 72, 2.5, 3.5, 3, null, ""],
     ["flocons", "Flocons d'avoine", "starch", 370, 13, 60, 7, 10, 2.5, null, ""],
     ["pain-complet", "Pain complet", "starch", 250, 9, 45, 3, 6, 4, null, ""],
-    ["pommes-de-terre", "Pommes de terre", "starch", 80, 2, 17, 0.1, 1.8, 1.5, null, ""],
+    ["pommes-de-terre", "Pommes de terre", "starch", 80, 2, 17, 0.1, 1.8, 2.2, null, ""],
     ["lentilles", "Lentilles sèches", "legume", 350, 25, 50, 1.5, 11, 3, null, ""],
     ["pois-chiches", "Pois chiches (conserve)", "legume", 120, 7, 16, 2.5, 5, 2.5, null, ""],
     ["haricots-rouges", "Haricots rouges (conserve)", "legume", 100, 7, 14, 0.5, 6, 2.5, null, ""],
@@ -628,14 +628,14 @@
   function inSeason(f, month) { return !f.season || f.season.indexOf(month) >= 0; }
   function seasonalProduce(month) { return FOODS.filter((f) => isFV(f) && f.season && inSeason(f, month)); }
 
-  function basketTotals(basket) {
+  function basketTotals(basket, over) {
     const t = { kcal: 0, p: 0, c: 0, f: 0, fib: 0, fv: 0, cost: 0, red: 0, charc: 0, fish: 0, processedKcal: 0 };
     Object.keys(basket || {}).forEach((id) => {
       const f = FOOD_BY_ID[id], g = +basket[id] || 0;
       if (!f || g <= 0) return;
       const k = g / 100;
       t.kcal += f.kcal * k; t.p += f.p * k; t.c += f.c * k; t.f += f.f * k; t.fib += f.fib * k;
-      t.cost += (g / 1000) * f.price;
+      t.cost += (g / 1000) * ((over && over[id] > 0) ? over[id] : f.price);
       if (isFV(f)) t.fv += g;
       if (f.flags.indexOf("red") >= 0) t.red += g;
       if (f.flags.indexOf("charc") >= 0) t.charc += g;
@@ -950,34 +950,41 @@
     strasbourg: [48.5734, 7.7521], nice: [43.7102, 7.262], rennes: [48.1173, -1.6778], montpellier: [43.6108, 3.8767],
   };
   const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-  function openPricesUrl(foodId, city, today, days) {
+  function openPricesUrl(foodId, city, today, days, local) {
     const tag = OP_TAGS[foodId];
     if (!tag) return null;
     const d = new Date(Date.UTC(parseDate(today).y, parseDate(today).mo - 1, parseDate(today).d) - (days || 120) * 86400000);
     let u = "https://prices.openfoodfacts.org/api/v1/prices?category_tag=" + encQ(tag) + "&currency=EUR&order_by=-date&size=100&date__gte=" + d.toISOString().slice(0, 10);
     const c = CITY_COORDS[norm(city)];
-    if (c) u += "&lat=" + c[0] + "&lon=" + c[1] + "&radius_km=30";
+    if (c && local !== false) u += "&lat=" + c[0] + "&lon=" + c[1] + "&radius_km=30";
     return u;
   }
   const CHAINS = [["Lidl", /lidl/i], ["Aldi", /aldi/i], ["Carrefour", /carrefour/i], ["Leclerc", /leclerc/i], ["Auchan", /auchan/i], ["Intermarché", /intermarch/i],
     ["Monoprix", /monoprix/i], ["Casino", /casino/i], ["Super U", /\bu\b|super u|hyper u|u express/i], ["Biocoop", /biocoop/i], ["Grand Frais", /grand frais/i], ["Picard", /picard/i]];
   function medianOf(a) { const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
-  function summarizePrices(resp) {
-    const items = (resp && resp.items) || [];
-    const all = [], by = {};
-    items.forEach((it) => {
+  const BIO_SHOP = /biocoop|naturalia|vie claire|satoriz|bio\b/i;
+  // Résume des relevés Open Prices : pays filtré (France par défaut), magasins bio et promotions écartés du prix de référence
+  function summarizePrices(resp, countries) {
+    const ok = countries || ["FR"], rows = [];
+    ((resp && resp.items) || []).forEach((it) => {
       const price = parseFloat(it.price);
       if (!(price > 0) || String(it.price_per || "").toUpperCase() !== "KILOGRAM" || (it.currency && it.currency !== "EUR")) return;
-      all.push(price);
-      const loc = it.location || {}, label = (loc.osm_brand || "") + " " + (loc.osm_name || "");
+      const loc = it.location || {}, cc = String(loc.osm_address_country_code || "").toUpperCase();
+      if (!cc || ok.indexOf(cc) < 0) return;
+      const label = (loc.osm_brand || "") + " " + (loc.osm_name || "");
       const ch = CHAINS.find((c) => c[1].test(label));
-      if (ch) { (by[ch[0]] = by[ch[0]] || []).push(price); }
+      rows.push({ price, disc: !!it.price_is_discounted, chain: ch ? ch[0] : null, bio: BIO_SHOP.test(label) });
     });
+    const conv = rows.filter((r) => !r.bio), noDisc = conv.filter((r) => !r.disc), base = noDisc.length >= 3 ? noDisc : conv;
+    const by = {};
+    rows.forEach((r) => { if (r.chain) (by[r.chain] = by[r.chain] || []).push(r); });
     const byChain = {};
-    Object.keys(by).forEach((k) => { byChain[k] = { median: medianOf(by[k]), n: by[k].length }; });
-    return { n: all.length, median: all.length ? medianOf(all) : null, byChain };
+    Object.keys(by).forEach((k) => {
+      const nd = by[k].filter((r) => !r.disc), use = nd.length ? nd : by[k];
+      byChain[k] = { median: medianOf(use.map((r) => r.price)), n: use.length, bio: use.every((r) => r.bio) };
+    });
+    return { n: base.length, median: base.length ? medianOf(base.map((r) => r.price)) : null, byChain, bioN: rows.length - conv.length };
   }
-
   // Visage : mesures à partir des points du maillage (MediaPipe Face Mesh, 468 points)
   const FACE_PTS = { top: 10, chin: 152, fL: 54, fR: 284, cL: 234, cR: 454, jL: 172, jR: 397, nose: 1 };
   function measuresFromLandmarks(lm, W, H) {
