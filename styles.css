@@ -144,3 +144,20 @@ details summary { cursor: pointer; }
 .list li > details { width: 100%; }
 .list li > details .brands { display: block; margin: 4px 0; }
 .linkgrid { margin-bottom: 4px; }
+
+/* ---- Relook ---- */
+.tag.ok{background:var(--teal-bg);color:var(--teal-ink);border-color:var(--teal-line)}
+.pal{display:flex;gap:6px;margin:6px 0}.pal i{width:26px;height:26px;border-radius:50%;border:1px solid var(--line);display:inline-block}
+.row2{display:flex;gap:8px}.row2 input{flex:1}.row2 .btn{width:auto;margin-top:0;padding:0 18px}
+.verdict{font-size:20px;font-weight:700;margin:4px 0}
+.verdict.good{color:var(--accent)}.verdict.mid{color:var(--warn)}.verdict.bad{color:var(--danger)}
+.list li.done .n{opacity:.5;text-decoration:line-through}
+.chk{width:26px;height:26px;flex:none;accent-color:var(--accent);margin-right:8px}
+.li-row{display:flex;align-items:flex-start;width:100%}
+ul.tips{margin:6px 0 0;padding-left:18px;font-size:14px}ul.tips li{margin:3px 0}
+.scan canvas{width:100%;height:auto;border-radius:12px;display:block;margin-top:10px;background:var(--surface2)}
+.scan input[type=file]{display:none}
+label.btn{display:block;text-align:center;cursor:pointer;line-height:22px}
+label.btn.alt{background:var(--surface2);color:var(--text);border:1px solid var(--line)}
+.conf{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600}
+.conf.hi{background:var(--teal-bg);color:var(--teal-ink)}.conf.mid{background:var(--coral-bg);color:var(--coral-ink)}.conf.lo{background:var(--gray-bg);color:var(--gray-ink)}
