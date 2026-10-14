@@ -9,9 +9,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -27,10 +32,14 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: "platform-tools"
+
       - name: Préparer les fichiers web
         run: |
           mkdir www
           cp -r index.html app.js data.js scan.js sw.js styles.css manifest.webmanifest icons www/
+          # Nouvelle version de cache à chaque build : le téléphone ne garde plus l'ancien code
+          sed -i "s/relook-v[0-9a-z]*/relook-${GITHUB_SHA::7}/" www/sw.js
+          grep -n "VERSION" www/sw.js
 
       - name: Installer Capacitor
         run: |
@@ -49,23 +58,44 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Autoriser la caméra
+      - name: Autoriser la caméra et numéroter la version
         run: |
           f=android/app/src/main/AndroidManifest.xml
-          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n</manifest>#' "$f"
+          sed -i 's#</manifest>#    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+</manifest>#' "$f"
+          sed -i -E "s/versionCode [0-9]+/versionCode ${{ github.run_number }}/" android/app/build.gradle
           grep -n "CAMERA" "$f"
+          grep -n "versionCode" android/app/build.gradle
+
+      - name: Clé de signature stable (si le secret existe)
+        env:
+          DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$DEBUG_KEYSTORE_B64" ]; then
+            mkdir -p ~/.android
+            echo "$DEBUG_KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+            echo "Clé stable installée"
+          else
+            echo "::warning::Pas de secret DEBUG_KEYSTORE_B64 : il faudra désinstaller l'ancienne appli avant d'installer celle-ci."
+          fi
 
       - name: Construire l'APK
         working-directory: android
-        run: ./gradlew assembleDebug
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Renommer l'APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk relook-${{ github.run_number }}.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: relook-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: relook-apk-${{ github.run_number }}
+          path: relook-${{ github.run_number }}.apk
 
       - name: Publier une release (tags v*)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+          files: relook-${{ github.run_number }}.apk
